@@ -41,6 +41,12 @@
 #include "cute/tensor.hpp"
 #include "sm90_visitor_tma_warpspecialized.hpp"
 
+#if defined(__CUDA_ARCH__) || defined(__SYCL_CUDA_ARCH__)
+#define IS_CUDA_GPU 1
+#else
+#define IS_CUDA_GPU 0
+#endif
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::epilogue::fusion {
@@ -207,10 +213,10 @@ Array<float, 4> top_4_reduce(Array<float, 4> a, Array<float, 4> b) {
 template <typename Element, int N>
 CUTLASS_DEVICE
 void add_element_to_desc_sorted_array(cutlass::Array<Element, N>& a, Element b) {
-  if constexpr (N == 2 && is_same_v<Element, float>) {
+  if constexpr (IS_CUDA_GPU && N == 2 && is_same_v<Element, float>) {
     a = top_2_reduce_scalar(a, b);
   }
-  else if constexpr (N == 4 && is_same_v<Element, float>) {
+  else if constexpr (IS_CUDA_GPU && N == 4 && is_same_v<Element, float>) {
     a = top_4_reduce_scalar(a, b);
   }
   else {
@@ -234,10 +240,10 @@ void add_element_to_desc_sorted_array(cutlass::Array<Element, N>& a, Element b) 
 template <typename Element, int N>
 CUTLASS_DEVICE
 void merge_desc_sorted_arrays(cutlass::Array<Element, N>& a, const cutlass::Array<Element, N>& b) {
-  if constexpr (N == 2 && is_same_v<Element, float>) {
+  if constexpr (IS_CUDA_GPU && N == 2 && is_same_v<Element, float>) {
     a = top_2_reduce(a, b);
   }
-  else if constexpr (N == 4 && is_same_v<Element, float>) {
+  else if constexpr (IS_CUDA_GPU && N == 4 && is_same_v<Element, float>) {
     a = top_4_reduce(a, b);
   }
   else {
@@ -318,7 +324,7 @@ float fast_masked_softmax(float value, float minimum, float logsumexp) {
 template <typename Element>
 CUTLASS_DEVICE
 Element masked_softmax(Element value, Element minimum, Element logsumexp) {
-  if constexpr (is_same_v<Element, float>) {
+  if constexpr (IS_CUDA_GPU && is_same_v<Element, float>) {
     // Inline PTX implementation
     // Significantly reduces register requirements
     return fast_masked_softmax(value, minimum, logsumexp);
@@ -551,6 +557,11 @@ public:
       auto& [tCrTopK, tCrSoftmax, tCcCol, cCol, 
               lane_layout_MN, lane_mn,
               residue_cCol, residue_tCcCol] = args_tuple;
+      if(ThreadIdxX()==200 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
+        print("tCcCol: "); print(tCcCol); print("\n");
+        print("epi_m: "); print(epi_m); print("\n");
+        print("epi_n: "); print(epi_n); print("\n");
+      }
       Tensor tCcCol_mn = tCcCol(_,_,_,epi_m,epi_n);
 
       using ConvertInput = NumericArrayConverter<ElementCompute, ElementInput, FragmentSize, RoundStyle>;

@@ -161,6 +161,7 @@ if (NOT CUTLASS_ENABLE_SYCL)
 else()
   foreach(EXAMPLE
     14_ampere_tf32_tensorop_gemm
+    61_hopper_gemm_with_topk_and_softmax
     cute
     sycl
     )

@@ -82,7 +82,10 @@ template <
                         ElementD, ElementCompute, ElementC, ElementCompute>> ||
         cute::is_same_v<FusionOpOrCallbacks,
                         cutlass::epilogue::fusion::LinCombEltAct<cutlass::epilogue::thread::Identity,
-                        ElementD,ElementCompute,ElementC,ElementCompute>>)
+                        ElementD,ElementCompute,ElementC,ElementCompute>> ||
+        cute::is_same_v<FusionOpOrCallbacks, 
+                        cutlass::epilogue::fusion::LinCombTopKSoftmaxCol<2,ElementD,ElementCompute>>
+                        )
       >
     >{
       #ifdef SYCL_NVIDIA_TARGET

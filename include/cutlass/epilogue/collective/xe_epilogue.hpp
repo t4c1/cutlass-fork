@@ -303,6 +303,21 @@ public:
     Tensor rw_coord = tOuti(_,_,_,l_coord);
     Tensor mD_crd = make_identity_tensor(make_shape(M,N));
     Tensor cD = local_tile(mD_crd, take<0,2>(SubgroupTileShape{}), make_coord(m_coord, n_coord));
+    
+    //Tensor cD_mn = local_tile(mD_crd, take<0,2>(CtaTileMNK{}), make_coord(m_coord, n_coord));          // (CTA_M,CTA_N)
+    //Tensor tRS_cD_mn = thread_r2s.partition_S(flat_divide(cD_mn, SubgroupTileShape{}));     // (R2S,R2S_M,R2S_N,EPI_M,EPI_N)
+    //Tensor tRS_cD = make_counting_tensor(trD.layout());
+
+    ThrCopy thread_g2r = params.xe_load_c.get_slice(thread_idx);
+
+    // OOB predication for tile quantization "residue"
+    // Absolute coordinate tensors (dynamic)                                                    // (M,N)
+    using EpilogueTile = decltype(get<0>(params.xe_store_d.get_layoutS_MN()).shape());
+    Tensor cD_mn = local_tile(mD_crd, take<0,2>(SubgroupTileShape{}), make_coord(m_coord, n_coord));          // (CTA_M,CTA_N)
+    Tensor tRS_cD_mn = thread_g2r.partition_D(flat_divide(cD_mn, EpilogueTile{}));     // (G2R,G2R_M,G2R_N,EPI_M,EPI_N)
+
+    Tensor tRS_cD = make_counting_tensor(tRS_cD_mn.layout());                          // (G2R,G2R_M,G2R_N,EPI_M,EPI_N)
+
     // Get the fusion callbacks
     constexpr bool RefSrc = true;
     auto residue_mn = make_coord(M, N);
@@ -315,7 +330,7 @@ public:
                       params.xe_load_c,
                       cD,
                       residue_mn,
-                      cD,
+                      tRS_cD,
                       residue_mn,
                       trC,
                       thread_idx,
@@ -339,9 +354,16 @@ public:
         cst_callbacks.previsit(epi_m, epi_n, 0, is_C_load_needed);
 
         auto acc_frag_mn = acc_frag(_, epi_m, epi_n);
+        /*if(epi_n == 0 && epi_n == 0 && ThreadIdxX()==200 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
+          print("acc_frag: "); print(acc_frag); print("\n");
+          print("trD_frag: "); print(trD_frag); print("\n");
+          print("accumulators: "); print(accumulators); print("\n");
+          print("trD: "); print(trD); print("\n");
+        }*/
 
+        //TODO(Tadej): hardcoded 1
         CUTLASS_PRAGMA_UNROLL
-        for (int epi_v = 0; epi_v < FragmentSize; ++epi_v) {
+        for (int epi_v = 0; epi_v < 1; ++epi_v) {
           trD_frag(epi_v) = cst_callbacks.visit(acc_frag_mn(epi_v), epi_v, epi_m, epi_n);
         }
         copy(params.xe_store_d, trD, rw_coord(_, epi_m, epi_n));
