@@ -250,7 +250,7 @@ unsigned int byte_perm(unsigned int x, unsigned int y, unsigned int s) {
 
 template<typename T>
 CUTLASS_DEVICE
-unsigned int shfl_up_sync(
+T shfl_up_sync(
   unsigned int const mask,
   T const var,
   int const delta,
