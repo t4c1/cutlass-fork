@@ -415,14 +415,14 @@ private:
     // Butterfly reduction
     CUTLASS_DEVICE
     void shuffle_xor_sync(int laneMask) {
-      if constexpr (TopK == 2) {
+      if constexpr (IS_CUDA_GPU && TopK == 2) {
         static_assert(sizeof(TopKResult) == sizeof(uint64_t));
         uint64_t top_k = reinterpret_cast<uint64_t&>(*this);
         top_k = shfl_xor_sync(0xFFFFFFFF, top_k, laneMask);
         auto synced_v = reinterpret_cast<TopKResult&>(top_k);
         detail::merge_desc_sorted_arrays(top_k_, synced_v.top_k_);
       }
-      else if constexpr (TopK == 4) {
+      else if constexpr (IS_CUDA_GPU && TopK == 4) {
         static_assert(sizeof(TopKResult) == 2 * sizeof(uint64_t));
         uint64_t* top_k_ptr = reinterpret_cast<uint64_t*>(this);
         uint64_t top_k_arr[2];
@@ -446,14 +446,14 @@ private:
     // Warp shuffle reduction
     CUTLASS_DEVICE
     void shuffle_down_sync(uint32_t delta) {
-      if constexpr (TopK == 2) {
+      if constexpr (IS_CUDA_GPU && TopK == 2) {
         static_assert(sizeof(TopKResult) == sizeof(uint64_t));
         uint64_t top_k = reinterpret_cast<uint64_t&>(*this);
         top_k = shfl_down_sync(0xFFFFFFFF, top_k, delta);
         auto synced_v = reinterpret_cast<TopKResult&>(top_k);
         detail::merge_desc_sorted_arrays(top_k_, synced_v.top_k_);
       }
-      else if constexpr (TopK == 4) {
+      else if constexpr (IS_CUDA_GPU && TopK == 4) {
         static_assert(sizeof(TopKResult) == 2 * sizeof(uint64_t));
         uint64_t* top_k_ptr = reinterpret_cast<uint64_t*>(this);
         uint64_t top_k_arr[2];
@@ -557,16 +557,19 @@ public:
       auto& [tCrTopK, tCrSoftmax, tCcCol, cCol, 
               lane_layout_MN, lane_mn,
               residue_cCol, residue_tCcCol] = args_tuple;
-      if(ThreadIdxX()==200 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
-        print("tCcCol: "); print(tCcCol); print("\n");
-        print("epi_m: "); print(epi_m); print("\n");
-        print("epi_n: "); print(epi_n); print("\n");
-      }
       Tensor tCcCol_mn = tCcCol(_,_,_,epi_m,epi_n);
 
       using ConvertInput = NumericArrayConverter<ElementCompute, ElementInput, FragmentSize, RoundStyle>;
       ConvertInput convert_input{};
 
+      if(ThreadIdxX()==200 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
+        //print("tCcCol: "); print(tCcCol); print("\n");
+        //print("epi_m: "); print(epi_m); print("\n");
+        //print("epi_n: "); print(epi_n); print("\n");
+        print("FragmentSize: "); print(FragmentSize); print("\n");
+        print("tCcCol_mn: "); print(tCcCol_mn); print("\n");
+      }
+      
       Array frg_I = convert_input(frg_input);
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < FragmentSize; ++i) {

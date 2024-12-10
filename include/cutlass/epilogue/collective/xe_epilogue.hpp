@@ -281,6 +281,16 @@ public:
 
     static constexpr int FragsM = get<0>(SubgroupTileShape{}) / get<0>(MmaAtomShape()); // A frags per sub_group
     static constexpr int FragsN = get<1>(SubgroupTileShape{}) / get<1>(MmaAtomShape()); // B frags per sub_group
+    
+    if(ThreadIdxX()==200 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
+      print("SubgroupTileShape{}: "); print(SubgroupTileShape{}); print("\n");
+      print("MmaAtomShape(): "); print(MmaAtomShape()); print("\n");
+      print("typename TiledMma::ThrLayoutVMNK{}.shape()(): "); print(typename TiledMma::ThrLayoutVMNK{}.shape()); print("\n");
+      print("problem_shape_mnkl: "); print(problem_shape_mnkl); print("\n");
+      print("tile_shape_MNK: "); print(tile_shape_MNK); print("\n");
+      print("FragsM: "); print(FragsM); print("\n");
+      print("FragsN: "); print(FragsN); print("\n");
+    }
 
     static constexpr int FragmentSize = (get<0>(MmaAtomShape()) * get<1>(MmaAtomShape())) / SubgroupSize;
 
