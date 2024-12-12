@@ -282,7 +282,7 @@ public:
     static constexpr int FragsM = get<0>(SubgroupTileShape{}) / get<0>(MmaAtomShape()); // A frags per sub_group
     static constexpr int FragsN = get<1>(SubgroupTileShape{}) / get<1>(MmaAtomShape()); // B frags per sub_group
     
-    if(ThreadIdxX()==200 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
+    if(ThreadIdxX()==128 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
       print("SubgroupTileShape{}: "); print(SubgroupTileShape{}); print("\n");
       print("MmaAtomShape(): "); print(MmaAtomShape()); print("\n");
       print("typename TiledMma::ThrLayoutVMNK{}.shape()(): "); print(typename TiledMma::ThrLayoutVMNK{}.shape()); print("\n");
@@ -349,6 +349,9 @@ public:
 
     cst_callbacks.begin();
 
+    if(ThreadIdxX()==128 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
+      print("accumulators: "); print(accumulators(0)); print("\n");  print(accumulators(1)); print("\n");  print(accumulators(2)); print("\n");  print(accumulators(3)); print("\n"); 
+    }
     auto acc_frag = recast<Array<ElementOutput, FragmentSize>>(accumulators);
     auto trD_frag = recast<Array<ElementOutput, FragmentSize>>(trD);
 
@@ -364,7 +367,7 @@ public:
         cst_callbacks.previsit(epi_m, epi_n, 0, is_C_load_needed);
 
         auto acc_frag_mn = acc_frag(_, epi_m, epi_n);
-        /*if(epi_n == 0 && epi_n == 0 && ThreadIdxX()==200 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
+        /*if(epi_n == 0 && epi_m == 0 && ThreadIdxX()==128 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
           print("acc_frag: "); print(acc_frag); print("\n");
           print("trD_frag: "); print(trD_frag); print("\n");
           print("accumulators: "); print(accumulators); print("\n");
@@ -375,6 +378,9 @@ public:
         CUTLASS_PRAGMA_UNROLL
         for (int epi_v = 0; epi_v < 1; ++epi_v) {
           trD_frag(epi_v) = cst_callbacks.visit(acc_frag_mn(epi_v), epi_v, epi_m, epi_n);
+          if(epi_n == 0 && epi_m == 0 && ThreadIdxX()==128 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
+            print("acc_frag_mn(epi_v): "); print(acc_frag_mn(epi_v)[0]); print("\n");
+          }
         }
         copy(params.xe_store_d, trD, rw_coord(_, epi_m, epi_n));
       }

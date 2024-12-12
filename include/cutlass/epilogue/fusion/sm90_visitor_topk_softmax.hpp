@@ -213,25 +213,43 @@ Array<float, 4> top_4_reduce(Array<float, 4> a, Array<float, 4> b) {
 template <typename Element, int N>
 CUTLASS_DEVICE
 void add_element_to_desc_sorted_array(cutlass::Array<Element, N>& a, Element b) {
-  if constexpr (IS_CUDA_GPU && N == 2 && is_same_v<Element, float>) {
+  if constexpr (false && IS_CUDA_GPU && N == 2 && is_same_v<Element, float>) {
+    /*if(ThreadIdxX()==128 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
+      print("impl2: "); print("\n");
+    }*/
     a = top_2_reduce_scalar(a, b);
   }
   else if constexpr (IS_CUDA_GPU && N == 4 && is_same_v<Element, float>) {
+    /*if(ThreadIdxX()==128 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
+      print("impl4: "); print("\n");
+    }*/
     a = top_4_reduce_scalar(a, b);
   }
   else {
+    /*if(ThreadIdxX()==128 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
+      print("before: "); print(a[0]); print(" "); print(a[1]); print(" "); print(b); print("\n");
+      //print("tCrCol_vmn.top_k_: "); print(tCrCol_vmn.top_k_[0]); print(", "); print(tCrCol_vmn.top_k_[1]); print("\n");
+    }*/
     // slower generic path with branching, slower, and can cause register spill
     CUTLASS_PRAGMA_UNROLL
     for (int k = 0; k < N; ++k) {
-      if (a[k] <= b) {
+      if (a[k] < b) {
+        /*if(ThreadIdxX()==128 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
+          print("branch taken: "); print(k); print("\n");
+        }*/
         // Shift down
         CUTLASS_PRAGMA_UNROLL
         for (int l = N - 1; l > k; --l) {
           a[l] = a[l-1];
         }
         a[k] = b;
+        break;
       }
     }
+    /*if(ThreadIdxX()==128 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
+      print("after: "); print(a[0]); print(" "); print(a[1]); print(" "); print(b); print("\n");
+      //print("tCrCol_vmn.top_k_: "); print(tCrCol_vmn.top_k_[0]); print(", "); print(tCrCol_vmn.top_k_[1]); print("\n");
+    }*/
   }
 }
 
@@ -562,12 +580,13 @@ public:
       using ConvertInput = NumericArrayConverter<ElementCompute, ElementInput, FragmentSize, RoundStyle>;
       ConvertInput convert_input{};
 
-      if(ThreadIdxX()==200 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
+      if(ThreadIdxX()==128 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
         //print("tCcCol: "); print(tCcCol); print("\n");
         //print("epi_m: "); print(epi_m); print("\n");
         //print("epi_n: "); print(epi_n); print("\n");
-        print("FragmentSize: "); print(FragmentSize); print("\n");
-        print("tCcCol_mn: "); print(tCcCol_mn); print("\n");
+        //print("epi_v: "); print(epi_v); print("\n");
+        //print("FragmentSize: "); print(FragmentSize); print("\n");
+        //print("tCcCol_mn: "); print(tCcCol_mn); print("\n");
       }
       
       Array frg_I = convert_input(frg_input);
@@ -576,6 +595,10 @@ public:
         auto thread_crd = tCcCol_mn(epi_v * FragmentSize + i);
         if (elem_less(thread_crd, residue_tCcCol)) {
           TopKResult& tCrCol_vmn = tCrTopK(epi_v * FragmentSize + i);
+          /*if(ThreadIdxX()==128 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
+            print("frg_I[i]: "); print(frg_I[i]); print("\n");
+            print("tCrCol_vmn.top_k_: "); print(tCrCol_vmn.top_k_[0]); print(", "); print(tCrCol_vmn.top_k_[1]); print("\n");
+          }*/
           detail::add_element_to_desc_sorted_array(tCrCol_vmn.top_k_, frg_I[i]);
         }
       }
