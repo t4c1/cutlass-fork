@@ -281,17 +281,6 @@ public:
 
     static constexpr int FragsM = get<0>(SubgroupTileShape{}) / get<0>(MmaAtomShape()); // A frags per sub_group
     static constexpr int FragsN = get<1>(SubgroupTileShape{}) / get<1>(MmaAtomShape()); // B frags per sub_group
-    
-    if(ThreadIdxX()==0 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
-      /*print("SubgroupTileShape{}: "); print(SubgroupTileShape{}); print("\n");
-      print("MmaAtomShape(): "); print(MmaAtomShape()); print("\n");
-      print("typename TiledMma::ThrLayoutVMNK{}.shape()(): "); print(typename TiledMma::ThrLayoutVMNK{}.shape()); print("\n");
-      print("problem_shape_mnkl: "); print(problem_shape_mnkl); print("\n");
-      print("tile_shape_MNK: "); print(tile_shape_MNK); print("\n");
-      print("FragsM: "); print(FragsM); print("\n");
-      print("FragsN: "); print(FragsN); print("\n");
-      print("tiled_mma: "); print(tiled_mma); print("\n");*/
-    }
 
     static constexpr int FragmentSize = (get<0>(MmaAtomShape()) * get<1>(MmaAtomShape())) / SubgroupSize;
 
@@ -315,10 +304,6 @@ public:
     Tensor mD_crd = make_identity_tensor(make_shape(M,N));
     Tensor cD = local_tile(mD_crd, take<0,2>(SubgroupTileShape{}), make_coord(m_coord, n_coord));
     
-    //Tensor cD_mn = local_tile(mD_crd, take<0,2>(CtaTileMNK{}), make_coord(m_coord, n_coord));          // (CTA_M,CTA_N)
-    //Tensor tRS_cD_mn = thread_r2s.partition_S(flat_divide(cD_mn, SubgroupTileShape{}));     // (R2S,R2S_M,R2S_N,EPI_M,EPI_N)
-    //Tensor tRS_cD = make_counting_tensor(trD.layout());
-
     ThrCopy thread_g2r = params.xe_load_c.get_slice(thread_idx);
 
     // OOB predication for tile quantization "residue"
@@ -350,9 +335,6 @@ public:
 
     cst_callbacks.begin();
 
-    /*if(ThreadIdxX()==0 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
-      print("accumulators: "); print(accumulators(0)); print(" ");  print(accumulators(1)); print(" ");  print(accumulators(2)); print(" ");  print(accumulators(3)); print("\n"); 
-    }*/
     auto acc_frag = recast<Array<ElementOutput, FragmentSize>>(accumulators);
     auto trD_frag = recast<Array<ElementOutput, FragmentSize>>(trD);
 
@@ -370,23 +352,12 @@ public:
         cst_callbacks.previsit(epi_m, epi_n, 0, is_C_load_needed);
 
         auto acc_frag_mn = acc_frag(_, epi_m, epi_n);
-        /*if(epi_n == 0 && epi_m == 0 && ThreadIdxX()==0 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
-          print("acc_frag: "); print(acc_frag); print("\n");
-          print("trD_frag: "); print(trD_frag); print("\n");
-          print("accumulators: "); print(accumulators); print("\n");
-          print("trD: "); print(trD); print("\n");
-        }*/
 
-        //TODO(Tadej): hardcoded 1
         CUTLASS_PRAGMA_UNROLL
-        for (int epi_v = 0; epi_v < 1; ++epi_v) {
+        for (int epi_v = 0; epi_v < size(trD_frag); ++epi_v) {
           trD_frag(epi_v) = cst_callbacks.visit(acc_frag_mn(epi_v), epi_v, epi_m, epi_n);
-          /*if(epi_n == 0 && epi_m == 0 && ThreadIdxX()==0 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
-            print("acc_frag_mn(epi_v): "); print(acc_frag_mn(epi_v)[0]); print("\n");
-          }*/
         }
         
-        // Smem reduction callback entry point using current store buffer for workspace
         cst_callbacks.reduce(nullptr, [](){}, epi_m, epi_n, is_last_iteration, trD_frag);
 
         //TODO(Codeplay): cst_callbacks.postreduce()

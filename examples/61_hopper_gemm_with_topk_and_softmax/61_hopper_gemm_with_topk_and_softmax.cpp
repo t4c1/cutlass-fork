@@ -82,8 +82,6 @@
 
 using namespace cute;
 
-//#if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
-
 static constexpr int TopK = 2;
 static constexpr bool EnableTopKSoftmax = TopK > 1;
 
@@ -139,16 +137,6 @@ using FusionOperation     = std::conditional_t<EnableTopKSoftmax,
 // The fusion op only allows for epilogue tiles matching the mainloop tile.
 using EpilogueTileType    = decltype(cute::take<0,2>(TileShape{}));
 
-/*using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
-    ArchTag, OperatorClass,
-    TileShape, ClusterShape,
-    EpilogueTileType,
-    ElementAccumulator, ElementCompute,
-    ElementC, LayoutC, AlignmentC,
-    ElementD, LayoutD, AlignmentD,
-    EpilogueSchedule,
-    FusionOperation
-  >::CollectiveOp;*/
 using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<EpilogueDispatchPolicy, FusionOperation, TileShape,
         decltype(tile_shape(TiledMma()))>;
 using CollectiveEpilogue = cutlass::epilogue::collective::CollectiveEpilogue<
@@ -170,22 +158,9 @@ using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder
     ElementB, LayoutB, AlignmentB,
     ElementAccumulator,
     TileShape, ClusterShape,
-    cutlass::gemm::collective::StageCountAutoCarveout<
-      0 //static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))
-    >,
+    cutlass::gemm::collective::StageCountAutoCarveout<0>,
     KernelSchedule
   >::CollectiveOp;
-  /*using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
-          GEMMDispatchPolicy,
-          TileShape,
-          ElementInputA,
-          cutlass::gemm::TagToStrideA_t<LayoutA>,
-          ElementInputB,
-          cutlass::gemm::TagToStrideB_t<LayoutB>,
-          TiledMma,
-          GmemTiledCopyA, void, void, cute::identity,  // A
-          GmemTiledCopyB, void, void, cute::identity   // B
-  >;*/
 
 using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
     Shape<int,int,int,int>, // Indicates ProblemShape
@@ -215,8 +190,6 @@ cutlass::HostTensor<ElementD  , LayoutD  > tensor_D;
 cutlass::HostTensor<ElementD  , LayoutD  > tensor_ref_D;
 
 using LayoutScalar = cutlass::layout::PackedVectorLayout;
-
-//#endif // defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// Testbed utility types
@@ -301,8 +274,6 @@ struct Result {
   {}
 
 };
-
-//#if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// GEMM setup and evaluation
@@ -516,33 +487,9 @@ int run(Options &options) {
   return 0;
 }
 
-//#endif // defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
-
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char const **args) {
-
-  // CUTLASS must be compiled with CUDA 12.0 Toolkit to run this example
-  // and must have compute capability at least 90.
-#if !defined(CUTLASS_ENABLE_SYCL)
-  if (__CUDACC_VER_MAJOR__ < 12) {
-    std::cerr << "This example requires CUDA 12 or newer.\n";
-    // Returning zero so this test passes on older Toolkits. Its actions are no-op.
-    return 0;
-  }
-
-  cudaDeviceProp props;
-  int current_device_id;
-  CUDA_CHECK(cudaGetDevice(&current_device_id));
-  CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
-  cutlass::cudaError_t error = cudaGetDeviceProperties(&props, 0);
-  if (props.major < 9) {
-    std::cerr
-      << "This example requires a GPU of NVIDIA's Hopper Architecture or "
-      << "later (compute capability 90 or greater).\n";
-    return 0;
-  }
-#endif
   //
   // Parse options
   //
@@ -559,10 +506,7 @@ int main(int argc, char const **args) {
   //
   // Evaluate CUTLASS kernels
   //
-
-//#if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
   run<Gemm>(options);
-//#endif
 
   return 0;
 }
