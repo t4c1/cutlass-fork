@@ -268,6 +268,10 @@ public:
       params.mainloop
     );
 
+    /*if(ThreadIdxX()==0 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
+      print("accumulators: "); print(accumulators(0)); print(" ");  print(accumulators(1)); print(" ");  print(accumulators(2)); print(" ");  print(accumulators(3)); print("\n"); 
+    }*/
+
     CollectiveEpilogue epilogue{params.epilogue, shared_storage.epilogue};
     epilogue(
       problem_shape_MNKL,

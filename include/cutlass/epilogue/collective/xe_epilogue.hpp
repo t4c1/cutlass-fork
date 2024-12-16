@@ -282,14 +282,15 @@ public:
     static constexpr int FragsM = get<0>(SubgroupTileShape{}) / get<0>(MmaAtomShape()); // A frags per sub_group
     static constexpr int FragsN = get<1>(SubgroupTileShape{}) / get<1>(MmaAtomShape()); // B frags per sub_group
     
-    if(ThreadIdxX()==128 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
-      print("SubgroupTileShape{}: "); print(SubgroupTileShape{}); print("\n");
+    if(ThreadIdxX()==0 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
+      /*print("SubgroupTileShape{}: "); print(SubgroupTileShape{}); print("\n");
       print("MmaAtomShape(): "); print(MmaAtomShape()); print("\n");
       print("typename TiledMma::ThrLayoutVMNK{}.shape()(): "); print(typename TiledMma::ThrLayoutVMNK{}.shape()); print("\n");
       print("problem_shape_mnkl: "); print(problem_shape_mnkl); print("\n");
       print("tile_shape_MNK: "); print(tile_shape_MNK); print("\n");
       print("FragsM: "); print(FragsM); print("\n");
       print("FragsN: "); print(FragsN); print("\n");
+      print("tiled_mma: "); print(tiled_mma); print("\n");*/
     }
 
     static constexpr int FragmentSize = (get<0>(MmaAtomShape()) * get<1>(MmaAtomShape())) / SubgroupSize;
@@ -337,7 +338,7 @@ public:
                       tile_coord_mnkl,
                       tiled_mma,
                       SubgroupTileShape{}, // Epilogue tile
-                      params.xe_load_c,
+                      params.xe_store_d,
                       cD,
                       residue_mn,
                       tRS_cD,
@@ -349,9 +350,9 @@ public:
 
     cst_callbacks.begin();
 
-    if(ThreadIdxX()==128 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
-      print("accumulators: "); print(accumulators(0)); print("\n");  print(accumulators(1)); print("\n");  print(accumulators(2)); print("\n");  print(accumulators(3)); print("\n"); 
-    }
+    /*if(ThreadIdxX()==0 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
+      print("accumulators: "); print(accumulators(0)); print(" ");  print(accumulators(1)); print(" ");  print(accumulators(2)); print(" ");  print(accumulators(3)); print("\n"); 
+    }*/
     auto acc_frag = recast<Array<ElementOutput, FragmentSize>>(accumulators);
     auto trD_frag = recast<Array<ElementOutput, FragmentSize>>(trD);
 
@@ -359,6 +360,8 @@ public:
     for (int epi_n = 0; epi_n < FragsN; epi_n++) {
       CUTLASS_PRAGMA_UNROLL
       for (int epi_m = 0; epi_m < FragsM; epi_m++) {
+        bool is_last_iteration = epi_m == FragsM-1 && epi_n == FragsN-1;
+        cst_callbacks.begin_loop(epi_m, epi_n);
 
         if (is_C_load_needed) {
           copy(params.xe_load_c, rw_coord(_, epi_m, epi_n), trC);
@@ -367,7 +370,7 @@ public:
         cst_callbacks.previsit(epi_m, epi_n, 0, is_C_load_needed);
 
         auto acc_frag_mn = acc_frag(_, epi_m, epi_n);
-        /*if(epi_n == 0 && epi_m == 0 && ThreadIdxX()==128 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
+        /*if(epi_n == 0 && epi_m == 0 && ThreadIdxX()==0 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
           print("acc_frag: "); print(acc_frag); print("\n");
           print("trD_frag: "); print(trD_frag); print("\n");
           print("accumulators: "); print(accumulators); print("\n");
@@ -378,11 +381,19 @@ public:
         CUTLASS_PRAGMA_UNROLL
         for (int epi_v = 0; epi_v < 1; ++epi_v) {
           trD_frag(epi_v) = cst_callbacks.visit(acc_frag_mn(epi_v), epi_v, epi_m, epi_n);
-          if(epi_n == 0 && epi_m == 0 && ThreadIdxX()==128 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
+          /*if(epi_n == 0 && epi_m == 0 && ThreadIdxX()==0 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
             print("acc_frag_mn(epi_v): "); print(acc_frag_mn(epi_v)[0]); print("\n");
-          }
+          }*/
         }
+        
+        // Smem reduction callback entry point using current store buffer for workspace
+        cst_callbacks.reduce(nullptr, [](){}, epi_m, epi_n, is_last_iteration, trD_frag);
+
+        //TODO(Codeplay): cst_callbacks.postreduce()
+
         copy(params.xe_store_d, trD, rw_coord(_, epi_m, epi_n));
+        
+        cst_callbacks.end_loop(epi_m, epi_n);
       }
     }
 
