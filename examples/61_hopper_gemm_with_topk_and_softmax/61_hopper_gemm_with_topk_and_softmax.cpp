@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,7 +30,7 @@
  **************************************************************************************************/
 
 /*! \file
-    \brief  Hopper GEMM + Top-K + Softmax fusion
+    \brief  PVC GEMM + Top-K + Softmax fusion
 
     This example illustrates how to use the LinCombTopKSoftmaxCol EVT node to fuse
     Top-K and Softmax into the GEMM epilogue, with certain assumptions made.

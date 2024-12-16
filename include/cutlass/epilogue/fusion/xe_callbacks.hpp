@@ -175,21 +175,21 @@ template <
   class ElementScalar_,
   FloatRoundStyle RoundStyle,
   class CtaTileShapeMNK,
-  class EpilogueTile
+  class EpilogueTile,
+  class A
 >
 struct FusionCallbacks<
     epilogue::IntelPVCEpilogue,
     fusion::LinCombTopKSoftmaxCol<TopK, ElementOutput_, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle>,
     CtaTileShapeMNK,
     EpilogueTile
-    //TODO hardcoded FragmentSize
-> : Sm90LinCombTopKSoftmaxCol<TopK, 8, CtaTileShapeMNK, EpilogueTile, ElementOutput_, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle> {
+> : Sm90LinCombTopKSoftmaxCol<TopK, epilogue::IntelPVCEpilogue::FragmentSize, CtaTileShapeMNK, EpilogueTile, ElementOutput_, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle> {
 
   using ElementOutput = ElementOutput_;
   using ElementCompute = ElementCompute_;
   using ElementSource = ElementSource_;
   using ElementScalar = ElementScalar_;
-  using Impl = Sm90LinCombTopKSoftmaxCol<TopK, 8, CtaTileShapeMNK, EpilogueTile, 
+  using Impl = Sm90LinCombTopKSoftmaxCol<TopK, epilogue::IntelPVCEpilogue::FragmentSize, CtaTileShapeMNK, EpilogueTile, 
                                         typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type, 
                                         ElementCompute, ElementSource, ElementScalar, RoundStyle>;
   using Operation = fusion::LinCombTopKSoftmaxCol<TopK, ElementOutput, ElementCompute, ElementSource, ElementScalar, RoundStyle>;

@@ -213,7 +213,7 @@ Array<float, 4> top_4_reduce(Array<float, 4> a, Array<float, 4> b) {
 template <typename Element, int N>
 CUTLASS_DEVICE
 void add_element_to_desc_sorted_array(cutlass::Array<Element, N>& a, Element b) {
-  if constexpr (false && IS_CUDA_GPU && N == 2 && is_same_v<Element, float>) {
+  if constexpr (IS_CUDA_GPU && N == 2 && is_same_v<Element, float>) {
     a = top_2_reduce_scalar(a, b);
   }
   else if constexpr (IS_CUDA_GPU && N == 4 && is_same_v<Element, float>) {
@@ -241,7 +241,7 @@ void add_element_to_desc_sorted_array(cutlass::Array<Element, N>& a, Element b) 
 template <typename Element, int N>
 CUTLASS_DEVICE
 void merge_desc_sorted_arrays(cutlass::Array<Element, N>& a, const cutlass::Array<Element, N>& b) {
-  if constexpr (false && IS_CUDA_GPU && N == 2 && is_same_v<Element, float>) {
+  if constexpr (IS_CUDA_GPU && N == 2 && is_same_v<Element, float>) {
     a = top_2_reduce(a, b);
   }
   else if constexpr (IS_CUDA_GPU && N == 4 && is_same_v<Element, float>) {
@@ -325,7 +325,7 @@ float fast_masked_softmax(float value, float minimum, float logsumexp) {
 template <typename Element>
 CUTLASS_DEVICE
 Element masked_softmax(Element value, Element minimum, Element logsumexp) {
-  if constexpr (false&& IS_CUDA_GPU && is_same_v<Element, float>) {
+  if constexpr (IS_CUDA_GPU && is_same_v<Element, float>) {
     // Inline PTX implementation
     // Significantly reduces register requirements
     return fast_masked_softmax(value, minimum, logsumexp);
@@ -562,7 +562,7 @@ public:
 
       using ConvertInput = NumericArrayConverter<ElementCompute, ElementInput, FragmentSize, RoundStyle>;
       ConvertInput convert_input{};
-      
+
       Array frg_I = convert_input(frg_input);
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < FragmentSize; ++i) {

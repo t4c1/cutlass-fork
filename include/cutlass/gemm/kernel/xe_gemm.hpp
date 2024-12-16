@@ -186,8 +186,13 @@ public:
       batch_count = cute::size<3>(params.problem_shape);
     }
     return dim3(
+        #ifdef CUTLASS_SYCL_SWITCH_WG
+            cute::size(cute::ceil_div(cute::shape<0>(params.problem_shape), cute::shape<0>(WorkgroupTileShape{}))),
+            cute::size(cute::ceil_div(cute::shape<1>(params.problem_shape), cute::shape<1>(WorkgroupTileShape{}))),
+        #else
             cute::size(cute::ceil_div(cute::shape<1>(params.problem_shape), cute::shape<1>(WorkgroupTileShape{}))),
             cute::size(cute::ceil_div(cute::shape<0>(params.problem_shape), cute::shape<0>(WorkgroupTileShape{}))),
+        #endif
             batch_count
     );
   }
@@ -221,8 +226,13 @@ public:
     // Get the appropriate blocks for this sub_group -- potential for sub_group locality
     int thread_idx = int(ThreadIdxX());
     auto blk_shape = TileShape{};
+    #ifdef CUTLASS_SYCL_SWITCH_WG
+    auto m_coord = BlockIdxX();
+    auto n_coord = BlockIdxY();
+    #else
     auto m_coord = BlockIdxY();
     auto n_coord = BlockIdxX();
+    #endif
     auto l_coord = BlockIdxZ();
     auto blk_coord_mnkl = make_coord(m_coord, n_coord, _, l_coord);  
     int sub_group_id = thread_idx / SubgroupSize;
@@ -267,10 +277,6 @@ public:
       smem_buf,
       params.mainloop
     );
-
-    /*if(ThreadIdxX()==0 && ThreadIdxY() == 0 && ThreadIdxZ()==0 && BlockIdxX() == 0 && BlockIdxY() == 0 && BlockIdxZ() == 0){
-      print("accumulators: "); print(accumulators(0)); print(" ");  print(accumulators(1)); print(" ");  print(accumulators(2)); print(" ");  print(accumulators(3)); print("\n"); 
-    }*/
 
     CollectiveEpilogue epilogue{params.epilogue, shared_storage.epilogue};
     epilogue(
