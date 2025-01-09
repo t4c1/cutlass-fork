@@ -129,7 +129,7 @@ using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages>;
 using EpilogueDispatchPolicy = cutlass::epilogue::IntelPVCEpilogue;
 
 // Top-K + Softmax fusion operation
-using FusionOperation     = std::conditional_t<EnableTopKSoftmax,
+using EpilogueFusionOperation     = std::conditional_t<EnableTopKSoftmax,
   typename cutlass::epilogue::fusion::LinCombTopKSoftmaxCol<TopK, ElementD, ElementCompute>,
   typename cutlass::epilogue::fusion::LinearCombination<ElementD, ElementCompute, ElementC, ElementCompute>
 >;
@@ -137,7 +137,7 @@ using FusionOperation     = std::conditional_t<EnableTopKSoftmax,
 // The fusion op only allows for epilogue tiles matching the mainloop tile.
 using EpilogueTileType    = decltype(cute::take<0,2>(TileShape{}));
 
-using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<EpilogueDispatchPolicy, FusionOperation, TileShape,
+using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<EpilogueDispatchPolicy, EpilogueFusionOperation, TileShape,
         decltype(tile_shape(TiledMma()))>;
 using CollectiveEpilogue = cutlass::epilogue::collective::CollectiveEpilogue<
       EpilogueDispatchPolicy,
