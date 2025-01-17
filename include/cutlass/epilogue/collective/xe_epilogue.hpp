@@ -160,7 +160,7 @@ public:
     typename FusionCallbacks::Arguments thread{};
     ElementC const* ptr_C;
     StrideC dC;
-    ElementD const* ptr_D;
+    ElementD* ptr_D;
     StrideD dD;
   };
 
@@ -169,6 +169,10 @@ public:
     typename FusionCallbacks::Params thread{};
     XE_Copy_C xe_load_c;
     XE_Copy_D xe_store_d;
+    ElementC const* ptr_C = nullptr;
+    StrideC dC{};
+    ElementD* ptr_D = nullptr;
+    StrideD dD{};
   };
 
   //
@@ -206,7 +210,11 @@ public:
     return {
       FusionCallbacks::to_underlying_arguments(problem_shape, args.thread, workspace),
       xe_load_c,
-      xe_store_d
+      xe_store_d,
+      args.ptr_C,
+      args.dC,
+      args.ptr_D,
+      args.dD
     };
   }
 
@@ -296,25 +304,53 @@ public:
     // Indexing variables
     auto [M, N, K, L] = problem_shape_mnkl;
     auto [m_coord, n_coord, k_coord, l_coord] = tile_coord_mnkl;
-    auto m_offset = m_coord * BLK_M + (get_sub_group_id() / ATOM_N) * SG_M;
-    auto n_offset = n_coord * BLK_N + (get_sub_group_id() % ATOM_N) * SG_N;
+    auto m_sg = get_sub_group_id() / ATOM_N;
+    auto n_sg = get_sub_group_id() % ATOM_N;
+    auto m_offset = m_coord * BLK_M + m_sg * SG_M;
+    auto n_offset = n_coord * BLK_N + n_sg * SG_N;
     auto l_offset = l_coord;
 
     bool is_C_load_needed = is_source_supported && fusion_callbacks.is_C_load_needed();
+    
+    // Represent the full output tensor
+    Tensor mC_mnl = make_tensor(make_gmem_ptr(params.ptr_C), make_shape(M,N,L), params.dC);             //             (m,n,l)
+    Tensor mD_mnl = make_tensor(make_gmem_ptr(params.ptr_D), make_shape(M,N,L), params.dD);             //             (m,n,l)
+
+    //tile_shape_MNK = {};
+    Tensor g_cta_C_mnl = local_tile(mC_mnl, CtaTileMNK{}, make_coord(_,_,_), Step<_1,_1, X>{});             // (BLK_M,BLK_N,m,n,l)
+    Tensor g_cta_D_mnl = local_tile(mD_mnl, CtaTileMNK{}, make_coord(_,_,_), Step<_1,_1, X>{});             // (BLK_M,BLK_N,m,n,l)
+    
+    // Slice to get the tile this CTA is responsible for
+    Tensor g_cta_C = g_cta_C_mnl(_,_,m_coord,n_coord,l_coord);                                                   // (BLK_M,BLK_N)
+    Tensor g_cta_D = g_cta_D_mnl(_,_,m_coord,n_coord,l_coord);                                                   // (BLK_M,BLK_N)
+
+    Tensor gC_mnl = local_tile(g_cta_C, SubgroupTileShape{}, make_coord(_,_,_), Step<_1,_1, X>{});             // (BLK_M,BLK_N,m,n,l)
+    Tensor gD_mnl = local_tile(g_cta_D, SubgroupTileShape{}, make_coord(_,_,_), Step<_1,_1, X>{});             // (BLK_M,BLK_N,m,n,l)
+    
+    // Slice to get the tile this warp is responsible for
+    Tensor gC = gC_mnl(_,_,m_sg,n_sg);                                                   // (BLK_M,BLK_N)
+    Tensor gD = gD_mnl(_,_,m_sg,n_sg);                                                   // (BLK_M,BLK_N)
+    
+    auto thread_xe_load_c = params.xe_load_c.get_thread_slice(thread_idx);
+    Tensor tCgC = thread_xe_load_c.partition_S(gC);
+    auto thread_xe_store_d = params.xe_store_d.get_thread_slice(thread_idx);
+    Tensor tCgD = thread_xe_store_d.partition_D(gD);
+    Tensor tCacc = thread_xe_store_d.retile_S(accumulators);
 
     Tensor trC = make_tensor<typename TiledMma::ValTypeC>(Shape<Int<FragmentSize>>{});
     Tensor trD = make_tensor<typename TiledMma::ValTypeD>(Shape<Int<FragmentSize>>{});
+
     Tensor tOuti = params.xe_store_d.get_pvc_tensor(
             make_coord(m_offset, n_offset, 0),
             make_shape(_, Int<FragsM>{}, Int<FragsN>{}, L),
             make_stride(Int<get<0>(MmaAtomShape{})>{}, Int<get<1>(MmaAtomShape{})>{}, _1{}));
-
     Tensor rw_coord = tOuti(_,_,_,l_coord);
+
     Tensor mD_crd = make_identity_tensor(make_shape(M,N));
-    Tensor cD = local_tile(mD_crd, take<0,2>(SubgroupTileShape{}), make_coord(m_coord, n_coord));
+    Tensor cD = local_tile(mD_crd, take<0,2>(SubgroupTileShape{}), make_coord(m_coord, n_coord)); // TODO wrong
     // Get the fusion callbacks
     constexpr bool RefSrc = true;
-    auto residue_mn = make_coord(M, N);
+    auto residue_mn = make_coord(M, N); //TODO wrong
     auto cst_args = cutlass::epilogue::fusion::detail::ConsumerStoreArgs{
                       problem_shape_mnkl,
                       TileShapeMNK{},
@@ -359,6 +395,30 @@ public:
           trD_frag(epi_v) = cst_callbacks.visit(acc_frag_mn(epi_v), epi_v, epi_m, epi_n);
         }
         copy(params.xe_store_d, trD, rw_coord(_, epi_m, epi_n));
+        copy(params.xe_store_d, trD, tCgD(_, epi_m, epi_n));
+        
+        if(cute::thread(16) /*&& epi_m <= 1 && epi_n <= 1*/){
+          print("epi\n");
+          //print("rw_coord(_, epi_m, epi_n).data().coord_ "); print(rw_coord(_, epi_m, epi_n).data().coord_); print("\n");
+          //print("SubgroupTileShape "); print(SubgroupTileShape{}); print("\n");
+          //print("CtaTileMNK "); print(CtaTileMNK{}); print("\n");
+          //print("typename TiledMma::ThrLayoutVMNK{}.shape() "); print(typename TiledMma::ThrLayoutVMNK{}.shape()); print("\n");
+          print("CtaTileMNK{} "); print(CtaTileMNK{}); print("\n");
+          print("SubgroupTileShape "); print(SubgroupTileShape{}); print("\n");
+          print("mD_mnl "); print(mD_mnl); print("\n");
+          print("g_cta_D_mnl "); print(g_cta_D_mnl); print("\n");
+          print("g_cta_D "); print(g_cta_D); print("\n");
+          print("gD_mnl "); print(gD_mnl); print("\n");
+          //print("gC "); print(gC); print("\n");
+          print("tCgD "); print(tCgD); print("\n");
+          //print("tCgC "); print(tCgC); print("\n");
+          //print("tCacc "); print(tCacc); print("\n");
+          print("accumulators "); print(accumulators); print("\n");
+          print("typename Trait_D::Shape_MN{} "); print(typename Trait_D::Shape_MN{}); print("\n");
+          //print("base_ptr "); print(params.xe_store_d.traits.base_ptr); print("\n");
+          Tensor tCgD = thread_xe_store_d.partition_D(gD);
+          print("\n");
+        }
       }
     }
 

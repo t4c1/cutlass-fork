@@ -99,21 +99,49 @@ template <class CopyOp, class... ArgTs> struct XE_2D_LD_Unpack {
 
     using dtype = typename Tensor<TD, DLayout>::value_type;
 
-    dtype *base_addr = (dtype *)traits.base_ptr;
+    if constexpr(std::is_same_v<typename TS::value_type,typename TD::value_type>){
+      dtype *base_addr = (dtype *)src.data();
 
-    auto [m, n, l] = src.data().coord_;
+      auto [m, n, l] = src.data().coord_;
 
-    auto inst_size = sizeof(dtype);
+      auto inst_size = sizeof(dtype);
 
-    if constexpr (detail::has_inst_dtype<CopyOp>) {
-      inst_size = sizeof(typename CopyOp::inst_dtype);
+      if constexpr (detail::has_inst_dtype<CopyOp>) {
+        inst_size = sizeof(typename CopyOp::inst_dtype);
+      }
+
+      CopyOp::copy(base_addr + l * traits.width * traits.height,
+                  traits.width * sizeof(dtype), traits.height,
+                  traits.pitch * sizeof(dtype),
+                  intel::coord_t{(int)(n * sizeof(dtype) / inst_size), (int)(m)},
+                  &*dst.data());
+    } else{
+      dtype *base_addr = (dtype *)traits.base_ptr;
+
+      auto [m, n, l] = src.data().coord_;
+
+      auto inst_size = sizeof(dtype);
+
+      if constexpr (detail::has_inst_dtype<CopyOp>) {
+        inst_size = sizeof(typename CopyOp::inst_dtype);
+      }
+
+      CopyOp::copy(base_addr + l * traits.width * traits.height,
+                  traits.width * sizeof(dtype), traits.height,
+                  traits.pitch * sizeof(dtype),
+                  intel::coord_t{(int)(n * sizeof(dtype) / inst_size), (int)(m)},
+                  &*dst.data());
     }
-
-    CopyOp::copy(base_addr + l * traits.width * traits.height,
-                 traits.width * sizeof(dtype), traits.height,
-                 traits.pitch * sizeof(dtype),
-                 intel::coord_t{(int)(n * sizeof(dtype) / inst_size), (int)(m)},
-                 &*dst.data());
+    /*if(thread0()){
+      print("load\n"); 
+      print("base_addr "); print(base_addr); print("\n");
+      print("src "); print(src); print("\n");
+      print("m "); print(m); print("\n");
+      print("n "); print(n); print("\n");
+      print("l "); print(l); print("\n");
+      print("dst "); print(dst); print("\n");
+      print("TS==TD "); print(std::is_same_v<TS::value_type,TD::value_type>); print("\n");
+    }*/
   }
 
   template <class... CA_Args, class TS, class SLayout>
@@ -184,12 +212,45 @@ template <class CopyOp, class... ArgTs> struct XE_2D_ST_Unpack {
 
     dtype *base_addr = (dtype *)traits.base_ptr;
 
-    auto [m, n, l] = dst.data().coord_;
+    
+    /*if(thread(1)){
+      print("load\n"); 
+      //print("base_addr "); print(base_addr); print("\n");
+      print("src "); print(src); print("\n");
+      print("dst "); print(dst); print("\n");
+      print("traits.width "); print(traits.width); print("\n");
+      print("traits.height "); print(traits.height); print("\n");
+      print("traits.pitch "); print(traits.pitch); print("\n");
+    }*/
+    //assumption - we are not loading ints
+    if constexpr(std::is_same_v<typename TS::value_type,typename TD::value_type>){
+      if(thread(16)){
+        print("NVIDIA\n");
+        //print("base "); print(&dst(0) - syclcompat::local_id::x() % 16); print("\n");
+        print("ADDR "); print(&dst(0)); print("\n");
+        print("base_addr "); print(base_addr); print("\n");
+      }
+      CopyOp::copy(&dst(0),
+                  (int)(traits.width * sizeof(dtype)), (int)(traits.height),
+                  (int)(traits.pitch * sizeof(dtype)),
+                  intel::coord_t{(int)0, (int)0}, &*src.data());
+    }else{
 
-    CopyOp::copy(base_addr + l * traits.width * traits.height,
-                 (int)(traits.width * sizeof(dtype)), (int)(traits.height),
-                 (int)(traits.pitch * sizeof(dtype)),
-                 intel::coord_t{(int)n, (int)m}, &*src.data());
+      auto [m, n, l] = dst.data().coord_;
+
+      if(thread(16)){
+        print("INTEL\n");
+        //print("m "); print(m); print("\n");
+        //print("n "); print(n); print("\n");
+        //print("l "); print(l); print("\n");
+        print("ADDR "); print(base_addr + l * traits.width * traits.height + m * traits.width + n); print("\n");
+
+      }
+      /*CopyOp::copy(base_addr + l * traits.width * traits.height + m * traits.width + n,
+                  (int)(traits.width * sizeof(dtype)), (int)(traits.height),
+                  (int)(traits.pitch * sizeof(dtype)),
+                  intel::coord_t{(int)0, (int)0}, &*src.data());*/
+    }
   }
 
   template <class GCoord, class GShape, class GStride, class Basis = decltype(make_seq<rank(GStride{})>{})>
@@ -1868,8 +1929,8 @@ struct Copy_Traits<XE_2D_U32x8x16_ST_N, args_t...>
   using SrcLayout = Layout<Shape <_16,Shape <_32,  _8>>,
                            Stride<_32,Stride< _1,_512>>>;
   // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape <_16,_32>,
-                           Stride< _0, _1>>;
+  using DstLayout = Layout<Shape <_16,_256>,
+                           Stride< _0, _1>>; // 0 here makes all threads in a CTA get the same base address
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;
 

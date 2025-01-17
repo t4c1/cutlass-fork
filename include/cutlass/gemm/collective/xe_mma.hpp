@@ -307,6 +307,26 @@ struct CollectiveMma<
       // Copy gmem to rmem for the first k_tile
       copy(mainloop.gmem_tiled_copy_a, iter_a(_,_,_,k), tCrA_copy_view);
       copy(mainloop.gmem_tiled_copy_b, iter_b(_,_,_,k), tCrB_copy_view);
+      if(thread0() && k_tile == 0){
+        print("mainloop.gmem_tiled_copy_a: "); print(mainloop.gmem_tiled_copy_a); print("\n");
+        print("iter_a(_,_,_,k): "); print(iter_a(_,_,_,k)); print("\n");
+        print("iter_a(0): "); print(iter_a(0)); print("\n");
+        print("iter_a(1): "); print(iter_a(1)); print("\n");
+        print("tCrA_copy_view: "); print(tCrA_copy_view); print("\n");
+        print("tCrA_copy_view(0): "); print((float)tCrA_copy_view(0)); print("\n");
+        print("tCrA_copy_view(1): "); print((float)tCrA_copy_view(1)); print("\n");
+        print("tCrA_copy_view(2): "); print((float)tCrA_copy_view(2)); print("\n");
+        print("tCrA_copy_view(0,0,0): "); print((float)tCrA_copy_view(0,0,0)); print("\n");
+        print("tCrA: "); print(tCrA); print("\n");
+        print("tCrA(0): "); print((float)tCrA(0)); print("\n");
+        print("tCrA(1): "); print((float)tCrA(1)); print("\n");
+        print("tCrA(2): "); print((float)tCrA(2)); print("\n");
+        print("gA: "); print(gA); print("\n");
+        print("SG_K: "); print(SG_K); print("\n");
+        print("SG_K / SubgroupSize: "); print(SG_K / SubgroupSize); print("\n");
+        print("\n");
+        print("\n");
+      }
 
       if(prefetch_k < k_tile_count) {
         if constexpr(cute::detail::has_prefetch<GmemTiledCopyA>) {

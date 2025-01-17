@@ -226,6 +226,11 @@ struct TiledCopy : Copy_Atom
     auto tv_tensor = tensor.compose(thrval2mn, _);
     // ((thrid,val),(RestM,RestN,...))
 
+    if(thread(16)){
+      print("tensor"); print(tensor); print("\n");
+      print("ref2trg"); print(ref2trg); print("\n");
+      print("tv_tensor(make_coord(_,_), _)"); print(tv_tensor(make_coord(_,_), _)); print("\n");
+    }
     // Unfold and return
     return tv_tensor(make_coord(_,_), _);
   }
