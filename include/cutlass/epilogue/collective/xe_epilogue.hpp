@@ -322,29 +322,39 @@ public:
     bool is_C_load_needed = is_source_supported && fusion_callbacks.is_C_load_needed();
     
     // Represent the full output tensor
-    Tensor mC_mnl = make_tensor(make_gmem_ptr(params.ptr_C), make_shape(M,N,L), params.dC);             //             (m,n,l)
-    Tensor mD_mnl = make_tensor(make_gmem_ptr(params.ptr_D), make_shape(M,N,L), params.dD);             //             (m,n,l)
+    //Tensor mC_mnl = make_tensor(make_gmem_ptr(params.ptr_C), make_shape(M,N,L), params.dC);             //             (m,n,l)
+    //Tensor mD_mnl = make_tensor(make_gmem_ptr(params.ptr_D), make_shape(M,N,L), params.dD);             //             (m,n,l)
+    
+    Tensor mD_mnl = params.xe_store_d.get_pvc_tensor2(make_shape(M,N,L));
 
-    //tile_shape_MNK = {};
-    Tensor g_cta_C_mnl = local_tile(mC_mnl, CtaTileMNK{}, make_coord(_,_,_), Step<_1,_1, X>{});             // (BLK_M,BLK_N,m,n,l)
+    //Tensor g_cta_C_mnl = local_tile(mC_mnl, CtaTileMNK{}, make_coord(_,_,_), Step<_1,_1, X>{});             // (BLK_M,BLK_N,m,n,l)
     Tensor g_cta_D_mnl = local_tile(mD_mnl, CtaTileMNK{}, make_coord(_,_,_), Step<_1,_1, X>{});             // (BLK_M,BLK_N,m,n,l)
     
+    //Tensor g_cta_D_mnl2 = local_tile(mD_mnl2, CtaTileMNK{}, make_coord(_,_,_), Step<_1,_1, X>{});             // (BLK_M,BLK_N,m,n,l)
+    
     // Slice to get the tile this CTA is responsible for
-    Tensor g_cta_C = g_cta_C_mnl(_,_,m_coord,n_coord,l_coord);                                                   // (BLK_M,BLK_N)
+    //Tensor g_cta_C = g_cta_C_mnl(_,_,m_coord,n_coord,l_coord);                                                   // (BLK_M,BLK_N)
     Tensor g_cta_D = g_cta_D_mnl(_,_,m_coord,n_coord,l_coord);                                                   // (BLK_M,BLK_N)
+    
+    //Tensor g_cta_D2 = g_cta_D_mnl2(_,_,m_coord,n_coord,l_coord);                                                   // (BLK_M,BLK_N)
 
-    Tensor gC_mnl = local_tile(g_cta_C, SubgroupTileShape{}, make_coord(_,_,_), Step<_1,_1, X>{});             // (BLK_M,BLK_N,m,n,l)
+    //Tensor gC_mnl = local_tile(g_cta_C, SubgroupTileShape{}, make_coord(_,_,_), Step<_1,_1, X>{});             // (BLK_M,BLK_N,m,n,l)
     Tensor gD_mnl = local_tile(g_cta_D, SubgroupTileShape{}, make_coord(_,_,_), Step<_1,_1, X>{});             // (BLK_M,BLK_N,m,n,l)
+
+    //Tensor gD_mnl2 = local_tile(g_cta_D2, SubgroupTileShape{}, make_coord(_,_,_), Step<_1,_1, X>{});             // (BLK_M,BLK_N,m,n,l)
     
     // Slice to get the tile this warp is responsible for
-    Tensor gC = gC_mnl(_,_,m_sg,n_sg);                                                   // (BLK_M,BLK_N)
+    //Tensor gC = gC_mnl(_,_,m_sg,n_sg);                                                   // (BLK_M,BLK_N)
     Tensor gD = gD_mnl(_,_,m_sg,n_sg);                                                   // (BLK_M,BLK_N)
+
+    //Tensor gD2 = gD_mnl2(_,_,m_sg,n_sg);                                                   // (BLK_M,BLK_N)
     
-    auto thread_xe_load_c = params.xe_load_c.get_thread_slice(thread_idx);
-    Tensor tCgC = thread_xe_load_c.partition_S(gC);
+    //auto thread_xe_load_c = params.xe_load_c.get_thread_slice(thread_idx);
+    //Tensor tCgC = thread_xe_load_c.partition_S(gC);
     auto thread_xe_store_d = params.xe_store_d.get_thread_slice(thread_idx);
     Tensor tCgD = thread_xe_store_d.partition_D(gD);
-    Tensor tCacc = thread_xe_store_d.retile_S(accumulators);
+    
+    //Tensor tCgD2 = thread_xe_store_d.partition_D(gD2);
 
     Tensor trC = make_tensor<typename TiledMma::ValTypeC>(Shape<Int<FragmentSize>>{});
     Tensor trD = make_tensor<typename TiledMma::ValTypeD>(Shape<Int<FragmentSize>>{});
@@ -353,6 +363,14 @@ public:
             make_coord(m_offset, n_offset, 0),
             make_shape(_, Int<FragsM>{}, Int<FragsN>{}, L),
             make_stride(Int<get<0>(MmaAtomShape{})>{}, Int<get<1>(MmaAtomShape{})>{}, _1{}));
+    
+    
+    /*if(cute::thread(1)){
+      //print("epi init\n");
+      print("tOuti "); print(tOuti); print("\n");
+      print("tCgD "); print(tCgD); print("\n");
+      print("\n");
+    }*/
 
     // Because Sm90 uses shared memory, they are not tied to using the same accumulator values
     // for MMA and Epilogue. But because we are operating directly in the accumulators, we need to be
@@ -406,7 +424,9 @@ public:
       for (int epi_m = 0; epi_m < FragsM; epi_m++) {
 
         if (is_C_load_needed) {
-          copy(params.xe_load_c, rw_coord(_, epi_m, epi_n), trC);
+          //copy(params.xe_load_c, rw_coord(_, epi_m, epi_n), trC);
+          //copy(params.xe_load_c, tCgC(_, epi_m, epi_n), trC);
+          copy(params.xe_load_c, tCgD(_, epi_m, epi_n), trC); //cordinates for C and D are the same
         }
 
         cst_callbacks.previsit(epi_m, epi_n, 0, is_C_load_needed);
@@ -417,10 +437,11 @@ public:
         for (int epi_v = 0; epi_v < size(trD_frag); ++epi_v) {
           trD_frag(epi_v) = cst_callbacks.visit(acc_frag_mn(epi_v), epi_v, epi_m, epi_n);
         }
-        copy(params.xe_store_d, trD, rw_coord(_, epi_m, epi_n));
+        //copy(params.xe_store_d, trD, rw_coord(_, epi_m, epi_n));
+        //copy(params.xe_store_d, trD, tCgD(_, epi_m, epi_n));
         copy(params.xe_store_d, trD, tCgD(_, epi_m, epi_n));
         
-        if(cute::thread(16) /*&& epi_m <= 1 && epi_n <= 1*/){
+        /*if(cute::thread(16)){
           print("epi\n");
           //print("rw_coord(_, epi_m, epi_n).data().coord_ "); print(rw_coord(_, epi_m, epi_n).data().coord_); print("\n");
           //print("SubgroupTileShape "); print(SubgroupTileShape{}); print("\n");
@@ -441,7 +462,7 @@ public:
           //print("base_ptr "); print(params.xe_store_d.traits.base_ptr); print("\n");
           Tensor tCgD = thread_xe_store_d.partition_D(gD);
           print("\n");
-        }
+        }*/
       }
     }
 

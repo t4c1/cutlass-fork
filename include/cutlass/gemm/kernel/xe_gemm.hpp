@@ -239,13 +239,44 @@ public:
     constexpr auto workgroup_shape = WorkgroupTileShape{};                                                  // (SUB_M,SUB_N,SUB_K)
     constexpr auto subgroup_shape = SubgroupTileShape{};                   
 
-    Tensor mA_mkl = make_tensor(make_gmem_ptr(static_cast<ElementA const*>(nullptr)), make_shape(M,K,L), StrideA{});   //(m,k,l)
-    Tensor mB_nkl = make_tensor(make_gmem_ptr(static_cast<ElementB const*>(nullptr)), make_shape(N,K,L), StrideB{});   //(n,k,l)
+    Tensor mA_mkl2 = make_tensor(make_gmem_ptr(static_cast<ElementA const*>(nullptr)), make_shape(M,K,L), StrideA{});   //(m,k,l)
+    Tensor mB_nkl2 = make_tensor(make_gmem_ptr(static_cast<ElementB const*>(nullptr)), make_shape(N,K,L), StrideB{});   //(n,k,l)
+    Tensor mA_mkl = params.mainloop.gmem_tiled_copy_a.get_pvc_tensor2(make_shape(M,K,L));//make_tensor(make_gmem_ptr(static_cast<ElementA const*>(nullptr)), make_shape(M,K,L), StrideA{});   //(m,k,l)
+    Tensor mB_nkl = params.mainloop.gmem_tiled_copy_b.get_pvc_tensor2(make_shape(N,K,L));//make_tensor(make_gmem_ptr(static_cast<ElementB const*>(nullptr)), make_shape(N,K,L), StrideB{});   //(n,k,l)
+
     Tensor mA_mk = mA_mkl(_,_,l_coord);                                                                        // (m,k)
     Tensor mB_nk = mB_nkl(_,_,l_coord);                                                                        // (n,k)
+    Tensor mA_mk2 = mA_mkl2(_,_,l_coord);                                                                        // (m,k)
 
-    auto gA = local_tile(mA_mk, blk_shape, take<0, 3>(blk_coord_mnkl), Step<_1,  X, _1>{});
-    auto gB = local_tile(mB_nk, blk_shape, take<0, 3>(blk_coord_mnkl), Step< X, _1, _1>{});
+    auto gA_mkl = local_tile(mA_mk, blk_shape, make_coord(_,_,_), Step<_1,  X, _1>{});
+    auto gB_nkl = local_tile(mB_nk, blk_shape, make_coord(_,_,_), Step< X, _1, _1>{});
+    auto gA_mkl2 = local_tile(mA_mk2, blk_shape, make_coord(_,_,_), Step<_1,  X, _1>{});
+
+    // Slice with m_coord and n_coord
+    Tensor gA = gA_mkl(_,_,m_coord,_);                                                       // (BLK_M,BLK_K,k)
+    Tensor gB = gB_nkl(_,_,n_coord,_);                                                       // (BLK_N,BLK_K,k)
+    Tensor gA2 = gA_mkl2(_,_,m_coord,_);                                                       // (BLK_M,BLK_K,k)
+
+    /*if(thread(0)){
+      print("StrideA{} "); print(StrideA{}); print("\n");
+      print("mA_mkl "); print(mA_mkl); print("\n");
+      print("mA_mkl2 "); print(mA_mkl2); print("\n");
+      print("gA "); print(gA); print("\n");
+      print("gA2 "); print(gA2); print("\n");
+      Tensor gA3 = make_tensor(make_gmem_ptr(static_cast<ElementA const*>(nullptr)), 
+                               gA2.shape(), 
+                               make_stride(0,
+                                           basis_value(get<1>(gA2.stride())), 
+                                           basis_value(get<2>(gA2.stride()))));
+      print("gA3 "); print(gA3); print("\n");
+      print("gA2.stride()(1) "); print(basis_value(get<1>(gA2.stride()))); print("\n");
+      print("gA2.stride()(2) "); print(basis_value(get<2>(gA2.stride()))); print("\n");
+
+      print("gA2.stride experimental(0) "); print(basis_value(get<0>(gA2.stride())) * basis_get(get<0>(gA2.stride()), StrideA{})); print("\n");
+      print("gA2.stride experimental(1) "); print(basis_value(get<1>(gA2.stride())) * basis_get(get<1>(gA2.stride()), StrideA{})); print("\n");
+      print("gA2.stride experimental(2) "); print(basis_value(get<2>(gA2.stride())) * basis_get(get<2>(gA2.stride()), StrideA{})); print("\n");
+      print("params.mainloop.gmem_tiled_copy_a.get_slice(thread_idx).partition_S(mA_mkl2) "); print(params.mainloop.gmem_tiled_copy_a.get_slice(thread_idx).partition_S(mA_mkl2)); print("\n");
+    }*/
 
     // Compute tile residues for predication
     auto m_max_coord = M - get<0>(subgroup_shape) * m_coord;                             // M - SUB_M * m_coord

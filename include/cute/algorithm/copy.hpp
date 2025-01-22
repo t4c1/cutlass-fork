@@ -161,25 +161,12 @@ copy_if(Copy_Atom<CopyArgs...>       const& copy_atom,
         Tensor<DstEngine, DstLayout>      & dst)       // (V,Rest...)
 {
   static_assert(SrcLayout::rank == DstLayout::rank, "CopyAtom rank-mismatch.");
-  /*if(thread0()) {
-    print("copying "); print(src); print(" dst "); print(dst); //print("\n");
-  }*/
   if constexpr (SrcLayout::rank == 1) {   // Dispatch the copy
-    /*if(thread0()) {
-      print("direct\n");
-    }*/
     copy_atom.call(src, dst);
   } else {                                // Loop over all but the first mode
     constexpr int R = SrcLayout::rank;
     Tensor src_v = group_modes<1,R>(src);
     Tensor dst_v = group_modes<1,R>(dst);
-    /*if(thread0()) {
-      print("src "); print(src); print("\n");
-      print("src_v "); print(src_v); print("\n");
-      print("dst "); print(dst); print("\n");
-      print("dst_v "); print(dst_v); print("\n");
-      print("loop "); print(size<1>(src_v)); print("\n");
-    }*/
     CUTE_UNROLL
     for (int i = 0; i < size<1>(src_v); ++i) {
       // If copy traits can be transformed with a predicate value, do it, otherwise branch here

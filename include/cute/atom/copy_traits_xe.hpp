@@ -99,10 +99,7 @@ template <class CopyOp, class... ArgTs> struct XE_2D_LD_Unpack {
 
     using dtype = typename Tensor<TD, DLayout>::value_type;
 
-    if constexpr(std::is_same_v<typename TS::value_type,typename TD::value_type>){
-      dtype *base_addr = (dtype *)src.data();
-
-      auto [m, n, l] = src.data().coord_;
+    if constexpr(std::is_same_v<const typename TS::value_type, const typename TD::value_type>){
 
       auto inst_size = sizeof(dtype);
 
@@ -110,13 +107,14 @@ template <class CopyOp, class... ArgTs> struct XE_2D_LD_Unpack {
         inst_size = sizeof(typename CopyOp::inst_dtype);
       }
 
-      CopyOp::copy(base_addr + l * traits.width * traits.height,
+      CopyOp::copy(&src(0),
                   traits.width * sizeof(dtype), traits.height,
                   traits.pitch * sizeof(dtype),
-                  intel::coord_t{(int)(n * sizeof(dtype) / inst_size), (int)(m)},
+                  intel::coord_t{(int)0, (int)0},
                   &*dst.data());
     } else{
-      dtype *base_addr = (dtype *)traits.base_ptr;
+
+      const dtype *base_addr = (const dtype *)traits.base_ptr;
 
       auto [m, n, l] = src.data().coord_;
 
@@ -178,6 +176,15 @@ template <class CopyOp, class... ArgTs> struct XE_2D_LD_Unpack {
                        make_layout(t_shape, t_stride));
   }
 
+  // Generate the PVC coord tensor
+  template <class GShape>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  get_pvc_tensor2(GShape const& g_shape) const {
+    static_assert(rank(GShape{}) == 3, "mismatch rank");
+    return make_counting_tensor(make_layout(g_shape, make_stride(E<0>(), E<1>(), E<2>())));
+  }
+
   template <class T1, class T2, class... TraitsArgs>
   static constexpr auto with(T1 && arg1, T2 && arg2, TraitsArgs&&... args) {
       return Traits_LD_t{arg1, arg2, args...};
@@ -212,6 +219,7 @@ template <class CopyOp, class... ArgTs> struct XE_2D_ST_Unpack {
 
     dtype *base_addr = (dtype *)traits.base_ptr;
 
+    //TODO some asserts
     
     /*if(thread(1)){
       print("load\n"); 
@@ -224,12 +232,12 @@ template <class CopyOp, class... ArgTs> struct XE_2D_ST_Unpack {
     }*/
     //assumption - we are not loading ints
     if constexpr(std::is_same_v<typename TS::value_type,typename TD::value_type>){
-      if(thread(16)){
+      /*if(thread(16)){
         print("NVIDIA\n");
         //print("base "); print(&dst(0) - syclcompat::local_id::x() % 16); print("\n");
         print("ADDR "); print(&dst(0)); print("\n");
         print("base_addr "); print(base_addr); print("\n");
-      }
+      }*/
       CopyOp::copy(&dst(0),
                   (int)(traits.width * sizeof(dtype)), (int)(traits.height),
                   (int)(traits.pitch * sizeof(dtype)),
@@ -238,18 +246,18 @@ template <class CopyOp, class... ArgTs> struct XE_2D_ST_Unpack {
 
       auto [m, n, l] = dst.data().coord_;
 
-      if(thread(16)){
+      /*if(thread(16)){
         print("INTEL\n");
         //print("m "); print(m); print("\n");
         //print("n "); print(n); print("\n");
         //print("l "); print(l); print("\n");
         print("ADDR "); print(base_addr + l * traits.width * traits.height + m * traits.width + n); print("\n");
 
-      }
-      /*CopyOp::copy(base_addr + l * traits.width * traits.height + m * traits.width + n,
+      }*/
+      CopyOp::copy(base_addr + l * traits.width * traits.height /*+ m * traits.width + n*/,
                   (int)(traits.width * sizeof(dtype)), (int)(traits.height),
                   (int)(traits.pitch * sizeof(dtype)),
-                  intel::coord_t{(int)0, (int)0}, &*src.data());*/
+                   intel::coord_t{(int)n, (int)m}, &*src.data());
     }
   }
 
@@ -267,6 +275,15 @@ template <class CopyOp, class... ArgTs> struct XE_2D_ST_Unpack {
     }));
     return make_tensor(make_inttuple_iter(coord),
                        make_layout(t_shape, t_stride));
+  }
+
+  // Generate the PVC coord tensor
+  template <class GShape>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  get_pvc_tensor2(GShape const& g_shape) const {
+    static_assert(rank(GShape{}) == 3, "mismatch rank");
+    return make_counting_tensor(make_layout(g_shape, make_stride(E<0>(), E<1>(), E<2>())));
   }
 
   template <class T1, class T2, class... TraitsArgs>
@@ -949,11 +966,11 @@ struct Copy_Traits<XE_2D_U16x32x32_LD_N, args_t...>
   using Shape_MN = Shape<_32, _32>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_16>,
-                           Stride< _0, _1>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_16,  _2, _32>>,
+                           Stride<_0,Stride< _1,_256,_512>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_16,  _2, _32>>,
-                           Stride<_16,Stride< _1,_256,_512>>>;
+                           Stride<_16,Stride< _1,_512,_16>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = DstLayout;
 
@@ -1440,7 +1457,7 @@ struct Copy_Traits<XE_2D_U16x32x32_LD_V, args_t...>
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_64>,
+  using SrcLayout = Layout<Shape <_16,_1024>,
                            Stride< _0, _1>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_16,  _2,  _2,  _16>>,

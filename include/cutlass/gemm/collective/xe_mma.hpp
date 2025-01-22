@@ -217,14 +217,44 @@ struct CollectiveMma<
     (void)residue_mnk;
     (void)thread_idx;
     (void)smem_buf;
+    
+    auto [m_idx, n_idx, k_idx, l_idx] = blk_coord;
 
+    auto [A_stride_0, A_stride_1, A_stride_2] = gA.stride();
+    Tensor gA_nullptr = make_tensor(make_gmem_ptr(static_cast<ElementA const*>(nullptr)), 
+                               gA.shape(), 
+                               make_stride(basis_value(A_stride_0) * basis_get(A_stride_0, StrideA{}),
+                                           basis_value(A_stride_1) * basis_get(A_stride_1, StrideA{}),
+                                           basis_value(A_stride_2) * basis_get(A_stride_2, StrideA{})));
+
+    auto [B_stride_0, B_stride_1, B_stride_2] = gB.stride();
+    Tensor gB_nullptr = make_tensor(make_gmem_ptr(static_cast<ElementB const*>(nullptr)), 
+                               gB.shape(), 
+                               make_stride(basis_value(B_stride_0) * basis_get(B_stride_0, StrideB{}),
+                                           basis_value(B_stride_1) * basis_get(B_stride_1, StrideB{}),
+                                           basis_value(B_stride_2) * basis_get(B_stride_2, StrideB{})));
+
+    /*Tensor mA_mkl = mainloop.gmem_tiled_copy_a.get_pvc_tensor2(make_shape(M,K,L));
+    Tensor mB_nkl = mainloop.gmem_tiled_copy_b.get_pvc_tensor2(make_shape(N,K,L));
+
+    Tensor mA_mk2 = mA_mkl2(_,_,l_idx);                                                                        // (m,k)
+    Tensor mB_mk2 = mB_mkl2(_,_,l_idx);                                                                        // (m,k)
+
+    Tensor gA_mkl2 = local_tile(mA_mk2, blk_shape, make_coord(_,_,_), Step<_1,  X, _1>{});
+    Tensor gB_mkl2 = local_tile(mB_mk2, blk_shape, make_coord(_,_,_), Step<_1,  X, _1>{});
+    
+    Tensor gA2 = gA_mkl2(_,_,m_coord,_);                                                       // (BLK_M,BLK_K,k)
+    Tensor gB2 = gB_mkl2(_,_,n_coord,_);                                                       // (BLK_N,BLK_K,k)
+*/
     // Instantiate the MMA object
     TiledMma tiled_mma;
     auto thread_mma = tiled_mma.get_slice(thread_idx);
-    Tensor tCrA_partition = thread_mma.partition_fragment_A(gA(_, _, 0));
+    //Tensor tAgA = gmem_thr_copy_A.partition_S(gA(_, _, 0));
+    //Tensor tCgA = thread_mma.partition_fragment_A(tAgA);
+    Tensor tCrA_partition = thread_mma.partition_fragment_A(gA_nullptr(_, _, 0));
     Tensor tCrA = make_tensor(static_cast<decltype(tCrA_partition) &&>(tCrA_partition).data(),
                               tCrA_partition.shape());
-    Tensor tCrB_partition = thread_mma.partition_fragment_B(gB(_, _, 0));
+    Tensor tCrB_partition = thread_mma.partition_fragment_B(gB_nullptr(_, _, 0));
     Tensor tCrB = make_tensor(static_cast<decltype(tCrB_partition) &&>(tCrB_partition).data(),
                               make_shape(size<0>(tCrB_partition.shape()),
                                          size<2>(tCrB_partition.shape()),
@@ -233,8 +263,11 @@ struct CollectiveMma<
     auto gmem_thr_copy_A = mainloop.gmem_tiled_copy_a.get_slice(thread_idx);
     auto gmem_thr_copy_B = mainloop.gmem_tiled_copy_b.get_slice(thread_idx);
 
-    auto tCrA_copy_view = gmem_thr_copy_A.retile_D(tCrA);
-    auto tCrB_copy_view = gmem_thr_copy_B.retile_D(tCrB);
+    Tensor tCrA_copy_view = gmem_thr_copy_A.retile_D(tCrA);
+    Tensor tCrB_copy_view = gmem_thr_copy_B.retile_D(tCrB);
+    
+    Tensor tAgA = gmem_thr_copy_A.partition_D(gA);
+    Tensor tBgB = gmem_thr_copy_B.partition_D(gB);
 
   #if CUTLASS_ENABLE_DEBUG_PRINTS
     if (thread(LOG_THREAD, LOG_GROUP)) {
@@ -262,7 +295,6 @@ struct CollectiveMma<
     //
     // Mainloop
     //
-    auto [m_idx, n_idx, k_idx, l_idx] = blk_coord;
   #ifdef CUTLASS_SYCL_SWITCH_WG
     const int m_coord = n_idx * BLK_M + (get_sub_group_id() / ATOM_N) * SG_M;
     const int n_coord = m_idx * BLK_N + (get_sub_group_id() % ATOM_N) * SG_N;
@@ -308,23 +340,12 @@ struct CollectiveMma<
       copy(mainloop.gmem_tiled_copy_a, iter_a(_,_,_,k), tCrA_copy_view);
       copy(mainloop.gmem_tiled_copy_b, iter_b(_,_,_,k), tCrB_copy_view);
       if(thread0() && k_tile == 0){
-        print("mainloop.gmem_tiled_copy_a: "); print(mainloop.gmem_tiled_copy_a); print("\n");
-        print("iter_a(_,_,_,k): "); print(iter_a(_,_,_,k)); print("\n");
-        print("iter_a(0): "); print(iter_a(0)); print("\n");
-        print("iter_a(1): "); print(iter_a(1)); print("\n");
-        print("tCrA_copy_view: "); print(tCrA_copy_view); print("\n");
-        print("tCrA_copy_view(0): "); print((float)tCrA_copy_view(0)); print("\n");
-        print("tCrA_copy_view(1): "); print((float)tCrA_copy_view(1)); print("\n");
-        print("tCrA_copy_view(2): "); print((float)tCrA_copy_view(2)); print("\n");
-        print("tCrA_copy_view(0,0,0): "); print((float)tCrA_copy_view(0,0,0)); print("\n");
-        print("tCrA: "); print(tCrA); print("\n");
-        print("tCrA(0): "); print((float)tCrA(0)); print("\n");
-        print("tCrA(1): "); print((float)tCrA(1)); print("\n");
-        print("tCrA(2): "); print((float)tCrA(2)); print("\n");
         print("gA: "); print(gA); print("\n");
-        print("SG_K: "); print(SG_K); print("\n");
-        print("SG_K / SubgroupSize: "); print(SG_K / SubgroupSize); print("\n");
-        print("\n");
+        print("tAgA: "); print(tAgA); print("\n");
+        print("tCrA_partition: "); print(tCrA_partition); print("\n");
+        print("tCrA: "); print(tCrA); print("\n");
+        print("tCrA_copy_view: "); print(tCrA_copy_view); print("\n");
+        print("iter_a: "); print(iter_a); print("\n");
         print("\n");
       }
 
