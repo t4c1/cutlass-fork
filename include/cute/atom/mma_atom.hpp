@@ -355,6 +355,10 @@ struct TiledMMA : MMA_Atom
   get_slice(ThrIdx const& thr_idx) const
   {
     auto thr_vmnk = thr_layout_vmnk_.get_flat_coord(thr_idx);
+    /*if(thread(99,3)){
+      print("thr_idx: "); print(thr_idx); print("\n");
+      print("thr_layout_vmnk_: "); print(thr_layout_vmnk_); print("\n");
+    }*/
     return ThrMMA<TiledMMA, decltype(thr_vmnk)>{*this, thr_vmnk};
   }
 
@@ -526,6 +530,14 @@ struct ThrMMA : TiledMMA
     auto thr_tensor = make_tensor(static_cast<ATensor&&>(atensor).data(), this->thrfrg_A(atensor.layout()));
 
     auto thr_vmk = make_coord(get<0>(thr_vmnk_), make_coord(get<1>(thr_vmnk_), get<3>(thr_vmnk_)));
+
+    /*if(thread(99,3)){
+      print("A thr_tensor: "); print(thr_tensor); print("\n");
+      print("thr_vmk: "); print(thr_vmk); print("\n");
+      print("coo?: "); print(make_coord(_, repeat<rank<1,1>(thr_tensor)>(_))); print("\n");
+      print("res: "); print(thr_tensor(thr_vmk, make_coord(_, repeat<rank<1,1>(thr_tensor)>(_)))); print("\n");
+      print("\n");
+    }*/
     return thr_tensor(thr_vmk, make_coord(_, repeat<rank<1,1>(thr_tensor)>(_)));
   }
 
@@ -537,6 +549,13 @@ struct ThrMMA : TiledMMA
     auto thr_tensor = make_tensor(static_cast<BTensor&&>(btensor).data(), this->thrfrg_B(btensor.layout()));
 
     auto thr_vnk = make_coord(get<0>(thr_vmnk_), make_coord(get<2>(thr_vmnk_), get<3>(thr_vmnk_)));
+    /*if(thread(99,3)){
+      print("B thr_tensor: "); print(thr_tensor); print("\n");
+      print("thr_vnk: "); print(thr_vnk); print("\n");
+      print("coord: "); print(make_coord(_, repeat<rank<1,1>(thr_tensor)>(_))); print("\n");
+      print("res: "); print(thr_tensor(thr_vnk, make_coord(_, repeat<rank<1,1>(thr_tensor)>(_)))); print("\n");
+      print("\n");
+    }*/
     return thr_tensor(thr_vnk, make_coord(_, repeat<rank<1,1>(thr_tensor)>(_)));
   }
 

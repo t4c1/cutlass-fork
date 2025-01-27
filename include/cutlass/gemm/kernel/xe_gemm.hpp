@@ -269,34 +269,23 @@ public:
     Tensor mB_nk = mB_nkl(_,_,l_coord);                                                                        // (n,k)
     Tensor mA_mk2 = mA_mkl2(_,_,l_coord);                                                                        // (m,k)
 
-    auto gA_mkl = local_tile(mA_mk, blk_shape, make_coord(_,_,_), Step<_1,  X, _1>{});
-    auto gB_nkl = local_tile(mB_nk, blk_shape, make_coord(_,_,_), Step< X, _1, _1>{});
-    auto gA_mkl2 = local_tile(mA_mk2, blk_shape, make_coord(_,_,_), Step<_1,  X, _1>{});
+    auto gA_mk = local_tile(mA_mk, blk_shape, make_coord(_,_,_), Step<_1,  X, _1>{});
+    auto gB_nk = local_tile(mB_nk, blk_shape, make_coord(_,_,_), Step< X, _1, _1>{});
+    auto gA_mk2 = local_tile(mA_mk2, blk_shape, make_coord(_,_,_), Step<_1,  X, _1>{});
 
     // Slice with m_coord and n_coord
-    Tensor gA = gA_mkl(_,_,m_coord,_);                                                       // (BLK_M,BLK_K,k)
-    Tensor gB = gB_nkl(_,_,n_coord,_);                                                       // (BLK_N,BLK_K,k)
-    Tensor gA2 = gA_mkl2(_,_,m_coord,_);                                                       // (BLK_M,BLK_K,k)
+    Tensor gA = gA_mk(_,_,m_coord,_);                                                       // (BLK_M,BLK_K,k)
+    Tensor gB = gB_nk(_,_,n_coord,_);                                                       // (BLK_N,BLK_K,k)
+    Tensor gA2 = gA_mk2(_,_,m_coord,_);                                                       // (BLK_M,BLK_K,k)
 
-    /*if(thread(0)){
-      print("StrideA{} "); print(StrideA{}); print("\n");
+    /*if(thread(16)){
+      print("gemm\n");
+      print("TileShape{} "); print(TileShape{}); print("\n");
       print("mA_mkl "); print(mA_mkl); print("\n");
-      print("mA_mkl2 "); print(mA_mkl2); print("\n");
+      print("mA_mk "); print(mA_mk); print("\n");
+      print("gA_mk "); print(gA_mk); print("\n");
       print("gA "); print(gA); print("\n");
-      print("gA2 "); print(gA2); print("\n");
-      Tensor gA3 = make_tensor(make_gmem_ptr(static_cast<ElementA const*>(nullptr)), 
-                               gA2.shape(), 
-                               make_stride(0,
-                                           basis_value(get<1>(gA2.stride())), 
-                                           basis_value(get<2>(gA2.stride()))));
-      print("gA3 "); print(gA3); print("\n");
-      print("gA2.stride()(1) "); print(basis_value(get<1>(gA2.stride()))); print("\n");
-      print("gA2.stride()(2) "); print(basis_value(get<2>(gA2.stride()))); print("\n");
-
-      print("gA2.stride experimental(0) "); print(basis_value(get<0>(gA2.stride())) * basis_get(get<0>(gA2.stride()), StrideA{})); print("\n");
-      print("gA2.stride experimental(1) "); print(basis_value(get<1>(gA2.stride())) * basis_get(get<1>(gA2.stride()), StrideA{})); print("\n");
-      print("gA2.stride experimental(2) "); print(basis_value(get<2>(gA2.stride())) * basis_get(get<2>(gA2.stride()), StrideA{})); print("\n");
-      print("params.mainloop.gmem_tiled_copy_a.get_slice(thread_idx).partition_S(mA_mkl2) "); print(params.mainloop.gmem_tiled_copy_a.get_slice(thread_idx).partition_S(mA_mkl2)); print("\n");
+      print("\n");
     }*/
 
     //auto gA = local_tile(params.mA_mk, blk_shape, take<0, 3>(blk_coord_mnkl), Step<_1,  X, _1>{});

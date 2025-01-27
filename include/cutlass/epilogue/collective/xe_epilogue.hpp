@@ -356,6 +356,24 @@ public:
     
     //Tensor tCgD2 = thread_xe_store_d.partition_D(gD2);
 
+    
+    /*if(cute::thread(16)){
+      print("epi\n");
+      print("mD_mnl "); print(mD_mnl); print("\n");
+      print("g_cta_D_mnl "); print(g_cta_D_mnl); print("\n");
+      print("g_cta_D "); print(g_cta_D); print("\n");
+      print("gD_mnl "); print(gD_mnl); print("\n");
+      print("gD "); print(gD); print("\n");
+      print("tCgD "); print(tCgD); print("\n");
+      //print("tCgC "); print(tCgC); print("\n");
+      //print("tCacc "); print(tCacc); print("\n");
+      //print("accumulators "); print(accumulators); print("\n");
+      //print("typename Trait_D::Shape_MN{} "); print(typename Trait_D::Shape_MN{}); print("\n");
+      //print("base_ptr "); print(params.xe_store_d.traits.base_ptr); print("\n");
+      //Tensor tCgD = thread_xe_store_d.partition_D(gD);
+      print("\n");
+    }*/
+
     Tensor trC = make_tensor<typename TiledMma::ValTypeC>(Shape<Int<FragmentSize>>{});
     Tensor trD = make_tensor<typename TiledMma::ValTypeD>(Shape<Int<FragmentSize>>{});
     Tensor rw_coord = params.xe_store_d.get_pvc_tensor(

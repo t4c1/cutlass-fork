@@ -179,6 +179,13 @@ struct XE_2D_LD_Unpack {
       x = m;
       y = n;
     }
+    /*if(thread(99,3)){
+      print("is_need_reversed: "); print(is_need_reversed); print("\n");
+      //print("base_addr: "); print(base_addr); print("\n");
+      print("m: "); print(m); print("\n");
+      print("n: "); print(n); print("\n");
+      print("l: "); print(l); print("\n");
+    }*/
 
     constexpr auto inst_size = detail::size_of_inst<CopyOp, dtype>;
 
