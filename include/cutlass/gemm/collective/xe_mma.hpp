@@ -133,6 +133,14 @@ struct CollectiveMma<
   using traits_load_B = Copy_Traits<GmemTiledCopyB, StrideB>;
   using atom_load_B = Copy_Atom<traits_load_B, ElementB>;
 
+  // This condition is specific to xe_mma
+  static_assert(size(typename traits_load_A::SrcLayout{}) == 
+                sizeof(ElementA) * TiledMma{}.template tile_size_mnk<0>() * TiledMma{}.template tile_size_mnk<2>(),
+                "TiledMMA size does not match CopyA size");
+  static_assert(size(typename traits_load_B::SrcLayout{}) == 
+                sizeof(ElementB) * TiledMma{}.template tile_size_mnk<1>() * TiledMma{}.template tile_size_mnk<2>(),
+                "TiledMMA size does not match CopyB size");
+
   using XE_Prefetch_A = decltype(cute::detail::prefetch_selector<PrefetchATileSize, ElementA>());
   using XE_Prefetch_B = decltype(cute::detail::prefetch_selector<PrefetchBTileSize, ElementB>());
 
