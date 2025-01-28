@@ -179,13 +179,6 @@ struct XE_2D_LD_Unpack {
       x = m;
       y = n;
     }
-    /*if(thread(99,3)){
-      print("is_need_reversed: "); print(is_need_reversed); print("\n");
-      //print("base_addr: "); print(base_addr); print("\n");
-      print("m: "); print(m); print("\n");
-      print("n: "); print(n); print("\n");
-      print("l: "); print(l); print("\n");
-    }*/
 
     constexpr auto inst_size = detail::size_of_inst<CopyOp, dtype>;
 
@@ -254,7 +247,7 @@ struct XE_2D_LD_Unpack {
   template <class GShape>
   CUTE_HOST_DEVICE constexpr
   auto
-  get_pvc_tensor2(GShape const& g_shape) const {
+  get_pvc_tensor(GShape const& g_shape) const {
     static_assert(rank(GShape{}) == 3, "mismatch rank");
     return make_counting_tensor(make_layout(g_shape, make_stride(E<0>(), E<1>(), E<2>())));
   }
@@ -326,23 +319,8 @@ template <class CopyOp, class StrideIndicator = cute::Stride<int64_t, cute::Int<
 
     //TODO some asserts
     
-    /*if(thread(1)){
-      print("load\n"); 
-      //print("base_addr "); print(base_addr); print("\n");
-      print("src "); print(src); print("\n");
-      print("dst "); print(dst); print("\n");
-      print("traits.width "); print(traits.width); print("\n");
-      print("traits.height "); print(traits.height); print("\n");
-      print("traits.pitch "); print(traits.pitch); print("\n");
-    }*/
     //assumption - we are not loading ints
     if constexpr(std::is_same_v<typename TS::value_type,typename TD::value_type>){
-      /*if(thread(16)){
-        print("NVIDIA\n");
-        //print("base "); print(&dst(0) - syclcompat::local_id::x() % 16); print("\n");
-        print("ADDR "); print(&dst(0)); print("\n");
-        print("base_addr "); print(base_addr); print("\n");
-      }*/
       CopyOp::copy(&dst(0),
                   (int)(traits.width * sizeof(dtype)), (int)(traits.height),
                   (int)(traits.pitch * sizeof(dtype)),
@@ -351,14 +329,6 @@ template <class CopyOp, class StrideIndicator = cute::Stride<int64_t, cute::Int<
 
       auto [m, n, l] = dst.data().coord_;
 
-      /*if(thread(16)){
-        print("INTEL\n");
-        //print("m "); print(m); print("\n");
-        //print("n "); print(n); print("\n");
-        //print("l "); print(l); print("\n");
-        print("ADDR "); print(base_addr + l * traits.width * traits.height + m * traits.width + n); print("\n");
-
-      }*/
       CopyOp::copy(base_addr + l * traits.stride_l,
                     (int)(traits.width * sizeof(dtype)), (int)(traits.height),
                     (int)(traits.pitch * sizeof(dtype)),
@@ -404,7 +374,7 @@ template <class CopyOp, class StrideIndicator = cute::Stride<int64_t, cute::Int<
   template <class GShape>
   CUTE_HOST_DEVICE constexpr
   auto
-  get_pvc_tensor2(GShape const& g_shape) const {
+  get_pvc_tensor(GShape const& g_shape) const {
     static_assert(rank(GShape{}) == 3, "mismatch rank");
     return make_counting_tensor(make_layout(g_shape, make_stride(E<0>(), E<1>(), E<2>())));
   }
@@ -1994,7 +1964,7 @@ struct Copy_Traits<XE_2D_U32x8x16_ST_N, args_t...>
                            Stride<_32,Stride< _1,_512>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,_256>,
-                           Stride< _0, _1>>; // 0 here makes all threads in a CTA get the same base address
+                           Stride< _0, _1>>; // 0 here makes all threads in a warp get the same base address
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;
 

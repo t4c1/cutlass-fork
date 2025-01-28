@@ -319,7 +319,7 @@ public:
     bool is_C_load_needed = is_source_supported && fusion_callbacks.is_C_load_needed();
     
     // Represent the full output tensor
-    Tensor mD_mnl = params.xe_store_d.get_pvc_tensor2(make_shape(M,N,L));
+    Tensor mD_mnl = params.xe_store_d.get_pvc_tensor(make_shape(M,N,L));
 
     // Tile the output tensor per CTA
     Tensor g_cta_D_mnl = local_tile(mD_mnl, CtaTileMNK{}, make_coord(_,_,_), Step<_1,_1, X>{});             // (BLK_M,BLK_N,m,n,l)
