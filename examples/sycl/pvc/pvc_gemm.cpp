@@ -318,13 +318,9 @@ int main(int argc, const char** argv)
   // Workgroup-level tile
   using TileShape = Shape<_256, _256, _32>;
 
-  /*using TiledMma = TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-          Layout<Shape<_8,_4,_1>>,
-          Tile<_64,_64,_32>>; // Subgroup level-tile
-  */
   using TiledMma =
     TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-              Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>,
+              Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>, // Layout of SGs in WG
               Tile<Layout<Shape<_8, _8, _4>, Stride<_1, _32, _8>>,
                   Layout<Shape<_16, _4, _4>, Stride<_1, _64, _16>>, _32>>;
 
