@@ -170,7 +170,7 @@ struct XE_2D_LD_Unpack {
     constexpr int dtype_size = sizeof(dtype);
     constexpr int bits_in_byte = 8;
 
-    static_assert(is_rmem<TS>::value);
+    static_assert(is_rmem<TD>::value);
     static_assert(size(SLayout{}) * dtype_size * bits_in_byte == size<1>(typename Traits_LD_t::SrcLayout{}),
                   "Src tensor size does not match copy atom size");
     static_assert(size(DLayout{}) * dtype_size * bits_in_byte == size<1>(typename Traits_LD_t::DstLayout{}),
