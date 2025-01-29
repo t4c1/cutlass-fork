@@ -140,6 +140,9 @@ struct CollectiveMma<
   using XE_Prefetch_A = decltype(cute::detail::prefetch_selector<PrefetchATileSize, ElementA>());
   using XE_Prefetch_B = decltype(cute::detail::prefetch_selector<PrefetchBTileSize, ElementB>());
 
+  using  TensorMKL = decltype(make_tensor(make_gmem_ptr(static_cast<ElementA const*>(nullptr)), make_shape(0,0,0), StrideA{}));   //(m, k)
+  using  TensorNKL = decltype(make_tensor(make_gmem_ptr(static_cast<ElementB const*>(nullptr)), make_shape(0,0,0), StrideB{}));   //(n, k)
+
   using Copy_A = decltype(make_tiled_copy(atom_load_A{}.with(
                                    nullptr, 0, 0),
                                    Layout<Shape<_1, Int<SubgroupSize>>>{},
