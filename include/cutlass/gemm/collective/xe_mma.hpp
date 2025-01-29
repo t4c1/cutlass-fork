@@ -137,27 +137,16 @@ struct CollectiveMma<
   using traits_load_B = Copy_Traits<GmemTiledCopyB, StrideB>;
   using atom_load_B = Copy_Atom<traits_load_B, ElementB>;
 
-  // This condition is specific to xe_mma
-  static_assert(size(typename traits_load_A::SrcLayout{}) == 
-                sizeof(ElementA) * TiledMma{}.template tile_size_mnk<0>() * TiledMma{}.template tile_size_mnk<2>(),
-                "TiledMMA size does not match CopyA size");
-  static_assert(size(typename traits_load_B::SrcLayout{}) == 
-                sizeof(ElementB) * TiledMma{}.template tile_size_mnk<1>() * TiledMma{}.template tile_size_mnk<2>(),
-                "TiledMMA size does not match CopyB size");
-
   using XE_Prefetch_A = decltype(cute::detail::prefetch_selector<PrefetchATileSize, ElementA>());
   using XE_Prefetch_B = decltype(cute::detail::prefetch_selector<PrefetchBTileSize, ElementB>());
 
-  using  TensorMKL = decltype(make_tensor(make_gmem_ptr(static_cast<ElementA const*>(nullptr)), make_shape(0,0,0), StrideA{}));   //(m, k)
-  using  TensorNKL = decltype(make_tensor(make_gmem_ptr(static_cast<ElementB const*>(nullptr)), make_shape(0,0,0), StrideB{}));   //(n, k)
- 
-  using CopyA2 = decltype(make_tiled_copy(atom_load_A{}.with(
+  using Copy_A = decltype(make_tiled_copy(atom_load_A{}.with(
                                    nullptr, 0, 0),
                                    Layout<Shape<_1, Int<SubgroupSize>>>{},
                                    make_layout(make_shape(get<0>(typename traits_load_A::BlockShape{}),
                                                           get<1>(typename traits_load_A::BlockShape{}) / Int<SubgroupSize>{}))));
           
-  using CopyB2 = decltype(make_tiled_copy(atom_load_B{}.with(
+  using Copy_B = decltype(make_tiled_copy(atom_load_B{}.with(
                                    nullptr, 0, 0),
                                    Layout<Shape<_1, Int<SubgroupSize>>>{},
                                    make_layout(make_shape(get<0>(typename traits_load_B::BlockShape{}),
@@ -171,8 +160,8 @@ struct CollectiveMma<
   };
 
   struct Params {
-    CopyA2 copy_A;
-    CopyB2 copy_B;
+    Copy_A copy_A;
+    Copy_B copy_B;
   };
 
   //
@@ -235,8 +224,8 @@ struct CollectiveMma<
     (void)thread_idx;
     (void)smem_buf;
     
-    auto thr_copy_A2 = mainloop.copy_A.get_slice(thread_idx);
-    auto thr_copy_B2 = mainloop.copy_B.get_slice(thread_idx);
+    auto thr_copy_A = mainloop.copy_A.get_slice(thread_idx);
+    auto thr_copy_B = mainloop.copy_B.get_slice(thread_idx);
 
     // Instantiate the MMA object and get thread slice
     TiledMma tiled_mma;
@@ -253,12 +242,12 @@ struct CollectiveMma<
     Tensor tCrB = make_tensor<ElementB>(tCgB(_,_,_,0).shape(), make_stride(_1{}, shape<0>(tCgB) * shape<2>(tCgB), shape<0>(tCgB)));
 
     // Retile registers for copies
-    Tensor tArA = thr_copy_A2.retile_D(tCrA);
-    Tensor tBrB = thr_copy_B2.retile_D(tCrB);
+    Tensor tArA = thr_copy_A.retile_D(tCrA);
+    Tensor tBrB = thr_copy_B.retile_D(tCrB);
     
     // Retile global tile for copies
-    Tensor tAgA = thr_copy_A2.retile_S(tCgA);
-    Tensor tBgB = thr_copy_B2.retile_S(tCgB);
+    Tensor tAgA = thr_copy_A.retile_S(tCgA);
+    Tensor tBgB = thr_copy_B.retile_S(tCgB);
 
 
   #if CUTLASS_ENABLE_DEBUG_PRINTS
