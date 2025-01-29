@@ -171,7 +171,7 @@ struct TiledCopy : Copy_Atom
   tidfrg_S(STensor&& stensor)
   {
     CUTE_STATIC_ASSERT_V(rank(stensor) >= rank(Tiler_MN{}), "Rank of tensor to be partitioned too small.");
-   
+
     // Tile the stensor and compute the (src-thr, src-val) -> (ref-thr, ref-val) layout
     return tile2thrfrg(zipped_divide(stensor,Tiler_MN{}), right_inverse(AtomLayoutRef{}).compose(AtomLayoutSrc{}));
   }

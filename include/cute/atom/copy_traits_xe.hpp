@@ -166,9 +166,15 @@ struct XE_2D_LD_Unpack {
   CUTE_HOST_DEVICE friend constexpr void
   copy_unpack(Traits_LD_t const &traits, Tensor<TS, SLayout> const &src,
               Tensor<TD, DLayout> &dst) {
-    static_assert(is_rmem<TD>::value);
-
     using dtype = typename Tensor<TD, DLayout>::value_type;
+    constexpr int dtype_size = sizeof(dtype);
+    constexpr int bits_in_byte = 8;
+
+    static_assert(is_rmem<TS>::value);
+    static_assert(size(SLayout{}) * dtype_size * bits_in_byte == size<1>(typename Traits_LD_t::SrcLayout{}),
+                  "Src tensor size does not match copy atom size");
+    static_assert(size(DLayout{}) * dtype_size * bits_in_byte == size<1>(typename Traits_LD_t::DstLayout{}),
+                  "Dst tensor size does not match copy atom size");
 
     dtype *base_addr = (dtype *)traits.base_ptr;
   
@@ -311,29 +317,25 @@ template <class CopyOp, class StrideIndicator = cute::Stride<int64_t, cute::Int<
   CUTE_HOST_DEVICE friend constexpr void
   copy_unpack(Traits_ST_t const &traits, Tensor<TS, SLayout> const &src,
               Tensor<TD, DLayout> &dst) {
-    static_assert(is_rmem<TS>::value);
 
     using dtype = typename Tensor<TS, SLayout>::value_type;
+    constexpr int dtype_size = sizeof(dtype);
+    constexpr int bits_in_byte = 8;
+
+    static_assert(is_rmem<TS>::value);
+    static_assert(size(SLayout{}) * dtype_size * bits_in_byte == size<1>(typename Traits_ST_t::SrcLayout{}),
+                  "Src tensor size does not match copy atom size");
+    static_assert(size(DLayout{}) * dtype_size * bits_in_byte == size<1>(typename Traits_ST_t::DstLayout{}),
+                  "Dst tensor size does not match copy atom size");
 
     dtype *base_addr = (dtype *)traits.base_ptr;
-
-    //TODO some asserts
     
-    //assumption - we are not loading ints
-    if constexpr(std::is_same_v<typename TS::value_type,typename TD::value_type>){
-      CopyOp::copy(&dst(0),
-                  (int)(traits.width * sizeof(dtype)), (int)(traits.height),
-                  (int)(traits.pitch * sizeof(dtype)),
-                  intel::coord_t{(int)0, (int)0}, &*src.data());
-    }else{
+    auto [m, n, l] = dst.data().coord_;
 
-      auto [m, n, l] = dst.data().coord_;
-
-      CopyOp::copy(base_addr + l * traits.stride_l,
-                    (int)(traits.width * sizeof(dtype)), (int)(traits.height),
-                    (int)(traits.pitch * sizeof(dtype)),
-                    intel::coord_t{(int)n, (int)m}, &*src.data());
-    }
+    CopyOp::copy(base_addr + l * traits.stride_l,
+                  (int)(traits.width * dtype_size), (int)(traits.height),
+                  (int)(traits.pitch * dtype_size),
+                  intel::coord_t{(int)n, (int)m}, &*src.data());
   }
 
   template <class Coord, class GShape>
@@ -1332,7 +1334,7 @@ struct Copy_Traits<XE_2D_U32x8x16_LD_N, args_t...>
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_32>,
+  using SrcLayout = Layout<Shape <_16,_256>,
                            Stride< _0, _1>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_32,  _8>>,
