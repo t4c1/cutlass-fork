@@ -276,10 +276,11 @@ struct CollectiveMma<
       }
  #endif
 
-    auto [m_idx, n_idx, k_idx, l_idx] = blk_coord;
     //
     // Mainloop
     //
+    auto [m_idx, n_idx, k_idx, l_idx] = blk_coord;
+    
     const int m_coord = m_idx * BLK_M + (get_sub_group_id() / ATOM_N) * SG_M;
     const int n_coord = n_idx * BLK_N + (get_sub_group_id() % ATOM_N) * SG_N;
     const int l_coord = l_idx;
