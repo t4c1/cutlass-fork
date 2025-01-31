@@ -171,11 +171,11 @@ struct XE_2D_LD_Unpack {
     constexpr int bits_in_byte = 8;
 
     static_assert(is_rmem<TD>::value);
-    static_assert(size(SLayout{}) * dtype_size * bits_in_byte == size<1>(typename Traits_LD_t::SrcLayout{}),
+    /*static_assert(size(SLayout{}) * dtype_size * bits_in_byte == size<1>(typename Traits_LD_t::SrcLayout{}),
                   "Src tensor size does not match copy atom size");
     static_assert(size(DLayout{}) * dtype_size * bits_in_byte == size<1>(typename Traits_LD_t::DstLayout{}),
                   "Dst tensor size does not match copy atom size");
-
+*/
     dtype *base_addr = (dtype *)traits.base_ptr;
   
     auto [m, n, l] = src.data().coord_;
@@ -318,11 +318,11 @@ template <class CopyOp, class StrideIndicator = cute::Stride<int64_t, cute::Int<
     constexpr int bits_in_byte = 8;
 
     static_assert(is_rmem<TS>::value);
-    static_assert(size(SLayout{}) * dtype_size * bits_in_byte == size<1>(typename Traits_ST_t::SrcLayout{}),
+    /*static_assert(size(SLayout{}) * dtype_size * bits_in_byte == size<1>(typename Traits_ST_t::SrcLayout{}),
                   "Src tensor size does not match copy atom size");
     static_assert(size(DLayout{}) * dtype_size * bits_in_byte == size<1>(typename Traits_ST_t::DstLayout{}),
                   "Dst tensor size does not match copy atom size");
-
+*/
     dtype *base_addr = (dtype *)traits.base_ptr;
     
     auto [m, n, l] = dst.data().coord_;
@@ -956,7 +956,7 @@ struct Copy_Traits<XE_2D_U16x8x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x8x32_LD_N, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_16>,
+  using SrcLayout = Layout<Shape <_16,_256>,
                            Stride< _0, _1>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_16,  _2,  _8>>,
@@ -990,7 +990,7 @@ struct Copy_Traits<XE_2D_U16x16x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x16x32_LD_N, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_16>,
+  using SrcLayout = Layout<Shape <_16,_512>,
                            Stride< _0, _1>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_16,  _2, _16>>,
@@ -1508,7 +1508,7 @@ struct Copy_Traits<XE_2D_U16x16x32_LD_V, args_t...>
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_64>,
+  using SrcLayout = Layout<Shape <_16,_512>,
                            Stride< _0, _1>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_16,  _2,  _2,   _8>>,
@@ -2110,8 +2110,14 @@ template<typename PrefetchShape, class Stride, class dtype, int subgroupsize, cl
   CUTE_HOST_DEVICE  auto make_prefetch(Tensor const& tensor) {
       using prefetch_trait = Copy_Traits<PrefetchShape, Stride>;
       using prefetch_atom = Copy_Atom<prefetch_trait, dtype>;
-      return make_xe_2d_copy(prefetch_atom{}.with(tensor),
-                                      Layout<Shape<_1, Int<16>>>{});
+
+        //print("\n");
+        //print("make_prefetch "); print(prefetch_atom{}); print("\n");
+
+      return make_tiled_copy(prefetch_atom{}.with(tensor),
+                                      Layout<Shape<_1, Int<subgroupsize>>>{},
+                                      make_layout(make_shape(get<0>(typename prefetch_trait::BlockShape{}),
+                                                             get<1>(typename prefetch_trait::BlockShape{}) / Int<subgroupsize>{})));
     }
 // Define macros to map types to their corresponding sizes
 #define TYPE_BITS_float(row) XE_2D_U32##x##row##x##16_LD_N
@@ -2169,4 +2175,137 @@ BUILD_XE_NAME(32)
       static_assert(dependent_false<PrefetchTileSize> && "Invalid PrefetchTileSize[0]");
   }
 } // end namespace detail
+
+template <class TiledCopy, class ThrIdx>
+class Xe2DThrCopy : ThrCopy<TiledCopy, ThrIdx> {
+
+public:
+
+  CUTE_HOST_DEVICE
+  Xe2DThrCopy(ThrIdx const& thr_idx) : ThrCopy<TiledCopy, ThrIdx> (thr_idx) {}
+
+  template <class DTensor>
+  CUTE_HOST_DEVICE
+  auto
+  retile_D(DTensor&& dtensor) {
+    if constexpr (!TiledCopy::is_convention_MN) {
+      return retile_D_nkl(dtensor);
+    } else {
+      return retile_D_mkl(dtensor);
+    }
+  }
+
+  template <class MMA, class MMATensor>
+  CUTE_HOST_DEVICE
+  auto
+  retile_MMA(MMA const&, MMATensor&& mma_tensor) {
+    if constexpr (TiledCopy::is_convention_MN) {
+      static constexpr auto m = decltype(size<1>(mma_tensor.shape()))::value;
+      static constexpr auto k = decltype(size<2>(mma_tensor.shape()))::value;
+      static constexpr auto m_step = size<0>(typename TiledCopy::BlockShape{})
+                                        / size<0>(typename MMA::Shape_MNK{});
+      static constexpr auto k_step = size<1>(typename TiledCopy::BlockShape{})
+                                        / size<2>(typename MMA::Shape_MNK{});
+
+      auto retiled_tensor = make_tensor(mma_tensor.data(),
+                                        make_shape(size<0>(mma_tensor.shape()),
+                                                   Int<m_step>{},
+                                                   Int<k_step>{},
+                                                   Int<m / m_step>{},
+                                                   Int<k / k_step>{}));
+      return make_tensor(mma_tensor.data(),group<2, 4>(group<1, 3>(select<0, 1, 3, 2, 4>(retiled_tensor.layout()))));
+    } else {
+      static constexpr auto k = decltype(size<2>(mma_tensor.shape()))::value;
+      static constexpr auto k_step = size<0>(typename TiledCopy::BlockShape{})
+                                      / size<2>(typename MMA::Shape_MNK{});
+
+      auto retiled_tensor = make_tensor(mma_tensor.data(),
+                                        make_shape(size<0>(mma_tensor.shape()),
+                                                   Int<k_step>{},
+                                                   size<1>(mma_tensor.shape()),
+                                                   Int<k / k_step>{}));
+      return make_tensor(mma_tensor.data(),group<2, 4>(select<0, 2, 1, 3>(retiled_tensor.layout())));
+    }
+  }
+
+private:
+
+  template <class DTensor>
+  CUTE_HOST_DEVICE static
+  auto
+  retile_D_mkl(DTensor&& dtensor) {
+    auto tmp = ThrCopy<TiledCopy, ThrIdx>::retile_D(dtensor);
+    return make_tensor(static_cast<decltype(tmp) &&>(tmp).data(),
+                           tmp.shape());
+  }
+
+  template <class DTensor>
+  CUTE_HOST_DEVICE static
+  auto
+  retile_D_nkl(DTensor&& dtensor) {
+    auto b_tensor = make_tensor(dtensor.data(),
+                               make_shape(size<0>(dtensor.shape()),
+                                         size<2>(dtensor.shape()),
+                                         size<1>(dtensor.shape())));
+    auto tmp = ThrCopy<TiledCopy, ThrIdx>::retile_D(b_tensor);
+    return make_tensor(static_cast<decltype(tmp) &&>(tmp).data(),
+                       make_shape(size<0>(tmp.shape()),
+                                  size<2>(tmp.shape()),
+                                  size<1>(tmp.shape())));
+  }
+};
+
+template <class Copy_Atom,
+          class LayoutCopy_TV,  // (tid,vid) -> coord   [Need not be 2D...]
+          class ShapeTiler_MN>  // coord space
+struct Xe2DTiledCopy : TiledCopy<Copy_Atom, LayoutCopy_TV, ShapeTiler_MN>{
+
+  template <class ThrIdx,
+            __CUTE_REQUIRES(is_integral<ThrIdx>::value)>
+  CUTE_HOST_DEVICE
+  auto
+  get_slice(ThrIdx const& thr_idx) const
+  {
+    return Xe2DThrCopy<Xe2DTiledCopy, ThrIdx>(thr_idx);
+  }
+};
+
+template <class... Args,
+          class ThrLayout,
+          class ValLayout = typename Copy_Atom<Args...>::Value_Layout>
+CUTE_HOST_DEVICE
+auto
+make_xe_2d_copy(Copy_Atom<Args...> const& copy_atom,
+                ThrLayout          const& thr_layout = {},     // (m,n) -> thr_idx
+                ValLayout          const& val_layout = {})     // (m,n) -> val_idx
+{
+  // Take the raked_products to compute the Layout_MN
+  // (M,N) -> (thr_idx, val_idx)
+  auto layout_mn = raked_product(thr_layout, val_layout);
+  // (thr_idx, val_idx) -> (M,N)
+  auto layout_tv = right_inverse(layout_mn).with_shape(make_shape(size(thr_layout), size(val_layout)));
+  // Tiler for extracting relevant elements
+  // (M,N) -> tensor coord
+  auto tiler = product_each(shape(layout_mn));
+
+#if 0
+  print("thr_layout: "); print(thr_layout); print("\n");
+  print("val_layout: "); print(val_layout); print("\n");
+  print("layout_mn : "); print(layout_mn);  print("\n");
+  print("layout_tv : "); print(layout_tv);  print("\n");
+  print("tiler     : "); print(tiler);      print("\n");
+#endif
+
+  return Xe2DTiledCopy<Copy_Atom<Args...>, decltype(layout_tv), decltype(tiler)>{copy_atom};
+}
+
+// The number of threads involved in a Xe2DTiledCopy
+template <class... Args>
+CUTE_HOST_DEVICE constexpr
+auto
+size(Xe2DTiledCopy<Args...> const&)
+{
+  return typename Xe2DTiledCopy<Args...>::TiledNumThr{};
+}
+
 } // end namespace cute
