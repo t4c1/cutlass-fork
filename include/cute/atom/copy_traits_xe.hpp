@@ -179,6 +179,9 @@ struct XE_2D_LD_Unpack {
     dtype *base_addr = (dtype *)traits.base_ptr;
   
     auto [m, n, l] = src.data().coord_;
+    /*if(cute::thread(127,33)){
+      print("load mnl: "); print(m); print(" "); print(n); print(" "); print(l); print("\n");
+    }*/
     int x = is_need_reversed ? m : n;
     int y = is_need_reversed ? n : m;
     constexpr auto inst_size = detail::size_of_inst<CopyOp, dtype>;
@@ -2110,9 +2113,6 @@ template<typename PrefetchShape, class Stride, class dtype, int subgroupsize, cl
   CUTE_HOST_DEVICE  auto make_prefetch(Tensor const& tensor) {
       using prefetch_trait = Copy_Traits<PrefetchShape, Stride>;
       using prefetch_atom = Copy_Atom<prefetch_trait, dtype>;
-
-        //print("\n");
-        //print("make_prefetch "); print(prefetch_atom{}); print("\n");
 
       return make_tiled_copy(prefetch_atom{}.with(tensor),
                                       Layout<Shape<_1, Int<subgroupsize>>>{},

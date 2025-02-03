@@ -294,6 +294,10 @@ struct CollectiveMmaAttention<
     Tensor tArA = thr_copy_A2.retile_D(tCrA);
     Tensor tBrB = thr_copy_B2.retile_D(tCrB);
 
+    // Retile global tile for copies
+    Tensor tAgA = thr_copy_A2.retile_S(tCgA);
+    Tensor tBgB = thr_copy_B2.retile_S(tCgB);
+
   #if CUTLASS_ENABLE_DEBUG_PRINTS
     if (thread(LOG_THREAD, LOG_GROUP)) {
         print("======================= A: \n");
@@ -328,11 +332,26 @@ struct CollectiveMmaAttention<
       make_coord(n_coord, 0, l_coord), tBrB.shape());
     Tensor iter_b = append_pvc_tensor<1>(iter_2d_b, k_tile_count, BLK_K);
 
+    if(cute::thread(127,33)){
+      print("m_coord "); print(m_coord); print("\n");
+      print("n_coord "); print(n_coord); print("\n");
+      print("k_coord "); print(k_coord); print("\n");
+      print("l_coord "); print(l_coord); print("\n");
+      print("tCgB "); print(tCgB); print("\n");
+      print("tBgB "); print(tBgB); print("\n");
+      print("tBrB "); print(tBrB); print("\n");
+      print("iter_b "); print(iter_b); print("\n");
+      print("k_tile_count "); print(k_tile_count); print("\n");
+      //print("tCrB_partition "); print(tCrB_partition); print("\n");
+      print("\n");
+    }
+
     CUTLASS_PRAGMA_UNROLL
     for (int k_tile = 0; k_tile < k_tile_count; ++k_tile) {
       // Copy gmem to rmem for the first k_tile
-      copy(params.gmem_tiled_copy_q, iter_a(_,_,_,k_tile), tArA);
+      copy(params.gmem_tiled_copy_q, tAgA(_,_,_,k_tile), tArA);
       copy(params.gmem_tiled_copy_k, iter_b(_,_,_,k_tile), tBrB);
+      //copy(params.gmem_tiled_copy_k, tBgB(_,_,_,k_tile), tBrB);
       cute::gemm(tiled_mma, accum, tCrA, tCrB, frag_src);
     }
   }
@@ -358,15 +377,23 @@ struct CollectiveMmaAttention<
     int thread_idx = static_cast<int>(ThreadIdxX());
     // Instantiate the MMA object
     TiledMma tiled_mma;
-    auto thread_mma = tiled_mma.get_slice(thread_idx);
+    auto thread_mma = tiled_mma.get_slice(thread_idx & ~15);
 
-    Tensor tCrB_partition = thread_mma.partition_fragment_B(gB(_, _, 0));
+    //Tensor tCrB_partition = thread_mma.partition_fragment_B(gB(_, _, 0));
+
+    Tensor tCgB = thread_mma.partition_B(gB);
+    
+    Tensor tCrB = make_tensor<ElementV>(tCgB(_,_,_,0).shape(), make_stride(_1{}, shape<0>(tCgB) * shape<2>(tCgB), shape<0>(tCgB)));
+
     // Partition the copying of A and B tiles across the threads
-    auto gmem_thr_copy_B = params.gmem_tiled_copy_v.get_slice(thread_idx);
+    //auto gmem_thr_copy_B = params.gmem_tiled_copy_v.get_slice(thread_idx);
+    auto gmem_thr_copy_B = params.gmem_tiled_copy_v2.get_slice(thread_idx);
+    Tensor tBrB = gmem_thr_copy_B.retile_D(tCrB);
 
-    auto tCrB_copy_view = gmem_thr_copy_B.retile_D(tCrB_partition);
+    //auto tCrB_copy_view = gmem_thr_copy_B.retile_D(tCrB_partition);
+    Tensor tBgB = gmem_thr_copy_B.retile_S(tCgB);
 
-    Tensor tCrB = gmem_thr_copy_B.retile_MMA(thread_mma, tCrB_partition);
+    //Tensor tCrB = gmem_thr_copy_B.retile_MMA(thread_mma, tCrB_partition);
 
   #if CUTLASS_ENABLE_DEBUG_PRINTS
     if (thread(LOG_THREAD, LOG_GROUP)) {
@@ -387,13 +414,7 @@ struct CollectiveMmaAttention<
     //
     // Mainloop
     //
-    auto [m_coord, n_coord, k_coord, l_coord] = tile_coord;
-
-    Tensor iter_2d_b = params.gmem_tiled_copy_v.get_pvc_tensor(
-      make_coord(n_coord, 0, l_coord), tCrB_copy_view.shape());
-    Tensor iter_b = append_pvc_tensor<1>(iter_2d_b, k_tile_count, BLK_K);
-
-    copy(params.gmem_tiled_copy_v, iter_b(_,_,_, load_idx), tCrB_copy_view);
+    copy(params.gmem_tiled_copy_v, tBgB(_,_,_, load_idx), tBrB);
 
     cute::gemm(tiled_mma, accum, tPr, tCrB, frag_src);
   }
