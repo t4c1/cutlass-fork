@@ -376,7 +376,7 @@ public:
       barrier_arrive(barrier_scope);
       // 1) Load K (performed inside mmaQK)
       // 2) Create Tensor S
-      auto gK = local_tile(mK_nk, subgroup_shape, make_coord(_, nblock - blk_n_coord, _), Step<X, _1, _1>{});
+      auto gK = local_tile(mK_nk, subgroup_shape, make_coord(_, nblock, _), Step<X, _1, _1>{});
       Tensor tSr = make_tensor<ElementAccumulator>(Shape<Int<Vec>, Int<FragsM>, Int<FragsN>>{});
       clear(tSr);
 

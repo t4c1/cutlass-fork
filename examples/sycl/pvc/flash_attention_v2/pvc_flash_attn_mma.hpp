@@ -263,17 +263,23 @@ struct CollectiveMmaAttention<
 
     int thread_idx = static_cast<int>(ThreadIdxX());
     auto thr_copy_A2 = params.gmem_tiled_copy_q2.get_slice(thread_idx);
+    //all sgs load the same data
+    //set lowest bit that determines the sg in wg to 0
     auto thr_copy_B2 = params.gmem_tiled_copy_k2.get_slice(thread_idx);
     // Instantiate the MMA object
     TiledMma tiled_mma;
     // To make all threads in a warp have the same global tensors pass in the index of thread 0 in each warp
     auto thread_mma = tiled_mma.get_slice(thread_idx & ~15);
+    // for partitioning tensor B we also want all subgroups in a row to load the same data
+    // we have the same TiledMMA for both MMAs in flash attention, but the first one should have different strides
+    // for now we have this hacky workaround
+    auto thread_mma_b = tiled_mma.get_slice(thread_idx & ~15 & ~16);
     //Tensor tCrA_partition = thread_mma.partition_fragment_A(gA(_, _, 0));
     //Tensor tCrB_partition = thread_mma.partition_fragment_B(gB(_, _, 0));
 
     // Partition
     Tensor tCgA = thread_mma.partition_A(gA);
-    Tensor tCgB = thread_mma.partition_B(gB);
+    Tensor tCgB = thread_mma_b.partition_B(gB);
 
     // Create fragments
     // TODO(Codeplay): fix this, this is probably not general
@@ -332,7 +338,7 @@ struct CollectiveMmaAttention<
       make_coord(n_coord, 0, l_coord), tBrB.shape());
     Tensor iter_b = append_pvc_tensor<1>(iter_2d_b, k_tile_count, BLK_K);
 
-    if(cute::thread(127,33)){
+    /*if(cute::thread(127,33)){
       print("m_coord "); print(m_coord); print("\n");
       print("n_coord "); print(n_coord); print("\n");
       print("k_coord "); print(k_coord); print("\n");
@@ -344,14 +350,14 @@ struct CollectiveMmaAttention<
       print("k_tile_count "); print(k_tile_count); print("\n");
       //print("tCrB_partition "); print(tCrB_partition); print("\n");
       print("\n");
-    }
+    }*/
 
     CUTLASS_PRAGMA_UNROLL
     for (int k_tile = 0; k_tile < k_tile_count; ++k_tile) {
       // Copy gmem to rmem for the first k_tile
       copy(params.gmem_tiled_copy_q, tAgA(_,_,_,k_tile), tArA);
-      copy(params.gmem_tiled_copy_k, iter_b(_,_,_,k_tile), tBrB);
-      //copy(params.gmem_tiled_copy_k, tBgB(_,_,_,k_tile), tBrB);
+      //copy(params.gmem_tiled_copy_k, iter_b(_,_,_,k_tile), tBrB);
+      copy(params.gmem_tiled_copy_k, tBgB(_,_,_,k_tile), tBrB);
       cute::gemm(tiled_mma, accum, tCrA, tCrB, frag_src);
     }
   }
