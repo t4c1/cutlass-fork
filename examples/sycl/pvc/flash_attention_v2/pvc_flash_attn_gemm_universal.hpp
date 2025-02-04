@@ -248,12 +248,6 @@ public:
     auto blk_l_coord = BlockIdxZ();
     auto blk_coord_mnkl = make_coord(blk_m_coord, blk_n_coord, _, blk_l_coord);
 
-    /*Tensor mQ_mkl = make_tensor(make_gmem_ptr(static_cast<ElementQ const*>(nullptr)),
-                                make_shape(seq_len, head_size, batch * num_heads), StrideQ{});   //(m,k,l)
-    Tensor mK_nkl = make_tensor(make_gmem_ptr(static_cast<ElementK const*>(nullptr)),
-                                make_shape(seq_len, head_size, batch * num_heads), StrideK{});   //(n,k,l)
-    Tensor mV_nkl = make_tensor(make_gmem_ptr(static_cast<ElementV const*>(nullptr)),
-                                make_shape(head_size, seq_len, batch * num_heads), StrideV{});   //(n,k,l)*/
     Tensor mQ_mkl = params.mainloop.gmem_tiled_copy_q.get_pvc_tensor(make_shape(seq_len, head_size, batch * num_heads));   //(m,k,l)
     Tensor mK_nkl = params.mainloop.gmem_tiled_copy_k.get_pvc_tensor(make_shape(seq_len, head_size, batch * num_heads));   //(m,k,l)
     Tensor mV_nkl = params.mainloop.gmem_tiled_copy_v.get_pvc_tensor(make_shape(head_size, seq_len, batch * num_heads));   //(n,k,l)
@@ -382,21 +376,6 @@ public:
 
       // 3) Perform GEMM S = Q*K
       auto tile_coord_QK = make_coord(seq_coord, load_idx, _, blk_l_coord);
-
-      /*if(cute::thread(127,33)){
-        print("tile_coord_QK "); print(tile_coord_QK); print("\n");
-        print("mK_nk "); print(mK_nk); print("\n");
-        print("gK_nk "); print(local_tile(mK_nk, blk_shape, make_coord(_, _, _), Step<X, _1, _1>{})); print("\n");
-        print("gK "); print(gK); print("\n");
-        print("blk_m_coord "); print(blk_m_coord); print("\n");
-        print("blk_n_coord "); print(blk_n_coord); print("\n");
-        print("blk_l_coord "); print(blk_l_coord); print("\n");
-        print("nblock "); print(nblock); print("\n");
-        print("load_idx "); print(load_idx); print("\n");
-        print("WorkgroupTileShape "); print(WorkgroupTileShape{}); print("\n");
-        print("SubgroupTileShape "); print(SubgroupTileShape{}); print("\n");
-      }*/
-
       collective_mma.mmaQK(tile_coord_QK, tSr, gQ, gK, tSr, head_size / get<1>(subgroup_shape), params.mainloop);
 
       // Apply causal mask
