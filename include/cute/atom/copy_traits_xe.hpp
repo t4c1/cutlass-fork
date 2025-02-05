@@ -827,7 +827,7 @@ struct Copy_Traits<XE_2D_U16x32x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x32x16_LD_N, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_16>,
+  using SrcLayout = Layout<Shape <_16,_512>,
                            Stride< _0, _1>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_16, _32>>,
@@ -1547,7 +1547,7 @@ struct Copy_Traits<XE_2D_U16x16x16_LD_T, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x16x16_LD_T, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_16>,
+  using SrcLayout = Layout<Shape <_16,_256>,
                            Stride< _0, _1>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape < _16,Shape <_16,_16>>,
