@@ -326,9 +326,9 @@ template <class CopyOp, class StrideIndicator = cute::Stride<int64_t, cute::Int<
     auto [m, n, l] = dst.data().coord_;
 
     CopyOp::copy(base_addr + l * traits.stride_l,
-                  traits.width * sizeof(dtype), traits.height,
-                  traits.pitch * sizeof(dtype),
-                  intel::coord_t{(int)n, (int)m}, &*src.data());
+                 traits.width * sizeof(dtype), traits.height,
+                 traits.pitch * sizeof(dtype),
+                 intel::coord_t{(int)n, (int)m}, &*src.data());
   }
 
   template <class Coord, class GShape>
