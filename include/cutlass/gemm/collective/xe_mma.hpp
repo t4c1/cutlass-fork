@@ -232,7 +232,7 @@ struct CollectiveMma<
 
     // Instantiate the MMA object and get thread slice
     TiledMma tiled_mma;
-    // To make all threads in a warp have the same global tensors pass in the index of thread 0 in each warp
+    // To make all work items in a subgroup have the same global tensors pass in the index of work item 0 in each subgroup
     auto thr_mma = tiled_mma.get_slice(thread_idx & ~15);
 
     // Partition

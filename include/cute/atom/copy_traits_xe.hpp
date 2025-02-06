@@ -167,13 +167,12 @@ struct XE_2D_LD_Unpack {
   copy_unpack(Traits_LD_t const &traits, Tensor<TS, SLayout> const &src,
               Tensor<TD, DLayout> &dst) {
     using dtype = typename Tensor<TD, DLayout>::value_type;
-    constexpr int dtype_size = sizeof(dtype);
-    constexpr int bits_in_byte = 8;
+    constexpr int dtype_bits = cutlass::sizeof_bits_v<dtype>;
 
     static_assert(is_rmem<TD>::value);
-    static_assert(size(SLayout{}) * dtype_size * bits_in_byte == size<1>(typename Traits_LD_t::SrcLayout{}),
+    static_assert(size(SLayout{}) * dtype_bits == size<1>(typename Traits_LD_t::SrcLayout{}),
                   "Src tensor size does not match copy atom size");
-    static_assert(size(DLayout{}) * dtype_size * bits_in_byte == size<1>(typename Traits_LD_t::DstLayout{}),
+    static_assert(size(DLayout{}) * dtype_bits == size<1>(typename Traits_LD_t::DstLayout{}),
                   "Dst tensor size does not match copy atom size");
 
     dtype *base_addr = (dtype *)traits.base_ptr;
@@ -186,7 +185,7 @@ struct XE_2D_LD_Unpack {
     CopyOp::copy(base_addr + l * traits.stride_l,
                  traits.width * sizeof(dtype), traits.height,
                  traits.pitch * sizeof(dtype),
-                 intel::coord_t{(int)(x * sizeof(dtype) / inst_size), y},
+                 intel::coord_t{(int)(x * sizeof(dtype) / inst_size), (int)y},
                  &*dst.data());
   }
 
@@ -314,13 +313,12 @@ template <class CopyOp, class StrideIndicator = cute::Stride<int64_t, cute::Int<
               Tensor<TD, DLayout> &dst) {
 
     using dtype = typename Tensor<TS, SLayout>::value_type;
-    constexpr int dtype_size = sizeof(dtype);
-    constexpr int bits_in_byte = 8;
+    constexpr int dtype_bits = cutlass::sizeof_bits_v<dtype>;
 
     static_assert(is_rmem<TS>::value);
-    static_assert(size(SLayout{}) * dtype_size * bits_in_byte == size<1>(typename Traits_ST_t::SrcLayout{}),
+    static_assert(size(SLayout{}) * dtype_bits == size<1>(typename Traits_ST_t::SrcLayout{}),
                   "Src tensor size does not match copy atom size");
-    static_assert(size(DLayout{}) * dtype_size * bits_in_byte == size<1>(typename Traits_ST_t::DstLayout{}),
+    static_assert(size(DLayout{}) * dtype_bits == size<1>(typename Traits_ST_t::DstLayout{}),
                   "Dst tensor size does not match copy atom size");
 
     dtype *base_addr = (dtype *)traits.base_ptr;
@@ -328,8 +326,8 @@ template <class CopyOp, class StrideIndicator = cute::Stride<int64_t, cute::Int<
     auto [m, n, l] = dst.data().coord_;
 
     CopyOp::copy(base_addr + l * traits.stride_l,
-                  (int)(traits.width * dtype_size), (int)(traits.height),
-                  (int)(traits.pitch * dtype_size),
+                  traits.width * sizeof(dtype), traits.height,
+                  traits.pitch * sizeof(dtype),
                   intel::coord_t{(int)n, (int)m}, &*src.data());
   }
 
@@ -1024,11 +1022,11 @@ struct Copy_Traits<XE_2D_U16x32x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x32x32_LD_N, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,Shape <_16,  _2, _32>>,
-                           Stride<_0,Stride< _1,_256,_512>>>;
+  using SrcLayout = Layout<Shape <_16, Shape<_16,  _2, _32>>,
+                           Stride<_0, Stride< _1,_256,_512>>>;
   // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape <_16,Shape <_16,  _2, _32>>,
-                           Stride<_16,Stride< _1,_512,_16>>>;
+  using DstLayout = Layout<Shape <_16, Shape <_16,   _2, _32>>,
+                           Stride<_16, Stride< _1, _512, _16>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = DstLayout;
 

@@ -253,17 +253,11 @@ public:
     // Represent the full output tensor
     Tensor mO_mnl = params.xe_store_o.get_pvc_tensor(make_shape(batch, num_heads, head_size));
 
-    // Tile the output tensor per CTA
-    Tensor g_cta_O_mnl = local_tile(mO_mnl, CtaTileMNK{}, make_coord(_,_,_), Step<_1,_1, X>{});             // (BLK_M,BLK_N,m,n,l)
+    // Tile the output tensor per WG
+    Tensor g_wg_O = local_tile(mO_mnl, select<0,1>(CtaTileMNK{}), make_coord(m_coord,n_coord,l_coord));             // (BLK_M,BLK_N,m,n,l)
     
-    // Slice to get the tile this CTA is responsible for                                                 // (BLK_M,BLK_N)
-    Tensor g_cta_O = g_cta_O_mnl(_,_,m_coord,n_coord,l_coord);                                                   // (BLK_M,BLK_N)
-    
-    // Tile the output tensor per warp
-    Tensor gO_mnl = local_tile(g_cta_O, SubgroupTileShape{}, make_coord(_,_,_), Step<_1,_1, X>{});             // (BLK_M,BLK_N,m,n,l)
-
-    // Slice to get the tile this warp is responsible for
-    Tensor gO = gO_mnl(_,_,m_sg,n_sg);                                                // (BLK_M,BLK_N)
+    // Tile the output tensor per SG
+    Tensor gO = local_tile(g_wg_O, SubgroupTileShape{}, make_coord(m_sg,n_sg,_), Step<_1,_1, X>{});             // (BLK_M,BLK_N,m,n,l)
 
     auto thread_xe_store_o = params.xe_store_o.get_thread_slice(ThreadIdxX());
     Tensor tOgO = thread_xe_store_o.partition_D(gO);
