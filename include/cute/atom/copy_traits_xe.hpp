@@ -171,17 +171,14 @@ struct XE_2D_LD_Unpack {
     constexpr int bits_in_byte = 8;
 
     static_assert(is_rmem<TD>::value);
-    /*static_assert(size(SLayout{}) * dtype_size * bits_in_byte == size<1>(typename Traits_LD_t::SrcLayout{}),
+    static_assert(size(SLayout{}) * dtype_size * bits_in_byte == size<1>(typename Traits_LD_t::SrcLayout{}),
                   "Src tensor size does not match copy atom size");
     static_assert(size(DLayout{}) * dtype_size * bits_in_byte == size<1>(typename Traits_LD_t::DstLayout{}),
                   "Dst tensor size does not match copy atom size");
-*/
+
     dtype *base_addr = (dtype *)traits.base_ptr;
   
     auto [m, n, l] = src.data().coord_;
-    /*if(cute::thread(127,33)){
-      print("load mnl: "); print(m); print(" "); print(n); print(" "); print(l); print("\n");
-    }*/
     int x = is_need_reversed ? m : n;
     int y = is_need_reversed ? n : m;
     constexpr auto inst_size = detail::size_of_inst<CopyOp, dtype>;
@@ -321,11 +318,11 @@ template <class CopyOp, class StrideIndicator = cute::Stride<int64_t, cute::Int<
     constexpr int bits_in_byte = 8;
 
     static_assert(is_rmem<TS>::value);
-    /*static_assert(size(SLayout{}) * dtype_size * bits_in_byte == size<1>(typename Traits_ST_t::SrcLayout{}),
+    static_assert(size(SLayout{}) * dtype_size * bits_in_byte == size<1>(typename Traits_ST_t::SrcLayout{}),
                   "Src tensor size does not match copy atom size");
     static_assert(size(DLayout{}) * dtype_size * bits_in_byte == size<1>(typename Traits_ST_t::DstLayout{}),
                   "Dst tensor size does not match copy atom size");
-*/
+
     dtype *base_addr = (dtype *)traits.base_ptr;
     
     auto [m, n, l] = dst.data().coord_;
