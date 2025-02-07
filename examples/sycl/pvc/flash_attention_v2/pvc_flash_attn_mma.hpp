@@ -142,28 +142,23 @@ struct CollectiveMmaAttention<
   using PrefetchVTileSize = decltype(ceil_div(Shape<Int<SG_K>, Int<SG_N>>{},PrefetchVThrShape{})); // 8x32
   static constexpr bool is_k_transposed = cute::detail::is_transpose_load<GmemTiledCopyK_>;
   static constexpr uint32_t MaxThreadsPerBlock = size(TiledMma{});
+  using CopyThreadShape = Shape<_1, Int<SubgroupSize>>;
   using traits_load_Q = Copy_Traits<GmemTiledCopyQ, StrideQ>;
   using atom_load_Q = Copy_Atom<traits_load_Q, ElementQ>;
-  using XE_Copy_Q = decltype(make_tiled_copy(atom_load_Q{}.with(
-                             nullptr, 0, 0),
-                             Layout<Shape<_1, Int<SubgroupSize>>>{},
-                             make_layout(make_shape(get<0>(typename traits_load_Q::BlockShape{}),
-                                                    get<1>(typename traits_load_Q::BlockShape{}) / Int<SubgroupSize>{}))));
+  using XE_Copy_Q = decltype(make_tiled_copy(atom_load_Q{}.with(nullptr, 0, 0),
+                                             Layout<CopyThreadShape>{},
+                                             make_layout(shape_div(typename traits_load_Q::BlockShape{}, CopyThreadShape{}))));
   using traits_load_K = Copy_Traits<GmemTiledCopyK, StrideK>;
   using atom_load_K = Copy_Atom<traits_load_K, ElementK>;
-  using XE_Copy_K = decltype(make_tiled_copy(atom_load_K{}.with(
-                             nullptr, 0, 0),
-                             Layout<Shape<_1, Int<SubgroupSize>>>{},
-                             make_layout(make_shape(get<0>(typename traits_load_K::BlockShape{}),
-                                                    get<1>(typename traits_load_K::BlockShape{}) / Int<SubgroupSize>{}))));
+  using XE_Copy_K = decltype(make_tiled_copy(atom_load_K{}.with(nullptr, 0, 0),
+                                             Layout<CopyThreadShape>{},
+                                             make_layout(shape_div(typename traits_load_K::BlockShape{}, CopyThreadShape{}))));
 
   using traits_load_V = Copy_Traits<GmemTiledCopyV, StrideV>;
   using atom_load_V = Copy_Atom<traits_load_V, ElementV>;
-  using XE_Copy_V = decltype(make_tiled_copy(atom_load_V{}.with(
-                                   nullptr, 0, 0),
-                                   Layout<Shape<_1, Int<SubgroupSize>>>{},
-                                   make_layout(make_shape(get<0>(typename traits_load_V::BlockShape{}),
-                                                          get<1>(typename traits_load_V::BlockShape{}) / Int<SubgroupSize>{}))));
+  using XE_Copy_V = decltype(make_tiled_copy(atom_load_V{}.with(nullptr, 0, 0),
+                                             Layout<CopyThreadShape>{},
+                                             make_layout(shape_div(typename traits_load_V::BlockShape{}, CopyThreadShape{}))));
 
 // The prefetch copy is different from the main copy here we use the subgroup collectively to load the data
   using XE_Prefetch_Q = decltype(cute::detail::prefetch_selector<PrefetchQTileSize, ElementQ, StrideQ, SubgroupSize>(make_tensor(make_gmem_ptr(static_cast<ElementQ const*>(nullptr)), make_layout(make_shape(0, 0, 0), StrideQ{}))));
@@ -208,17 +203,14 @@ struct CollectiveMmaAttention<
     auto tensorV = make_tensor(make_gmem_ptr(static_cast<ElementV const*>(args.ptr_V)), make_layout(make_shape(head_size, seq_len, batch * num_heads), args.dV));
 
     XE_Copy_Q copyQ = make_tiled_copy(atom_load_Q{}.with(tensorQ),
-                                      Layout<Shape<_1, Int<SubgroupSize>>>{},
-                                      make_layout(make_shape(get<0>(typename traits_load_Q::BlockShape{}),
-                                                             get<1>(typename traits_load_Q::BlockShape{}) / Int<SubgroupSize>{})));
+                                      Layout<CopyThreadShape>{},
+                                      make_layout(shape_div(typename traits_load_Q::BlockShape{}, CopyThreadShape{})));
     XE_Copy_K copyK = make_tiled_copy(atom_load_K{}.with(tensorK),
-                                      Layout<Shape<_1, Int<SubgroupSize>>>{},
-                                      make_layout(make_shape(get<0>(typename traits_load_K::BlockShape{}),
-                                                             get<1>(typename traits_load_K::BlockShape{}) / Int<SubgroupSize>{})));
+                                      Layout<CopyThreadShape>{},
+                                      make_layout(shape_div(typename traits_load_K::BlockShape{}, CopyThreadShape{})));
     XE_Copy_V copyV = make_tiled_copy(atom_load_V{}.with(tensorV),
-                                      Layout<Shape<_1, Int<SubgroupSize>>>{},
-                                      make_layout(make_shape(get<0>(typename traits_load_V::BlockShape{}),
-                                                             get<1>(typename traits_load_V::BlockShape{}) / Int<SubgroupSize>{})));
+                                      Layout<CopyThreadShape>{},
+                                      make_layout(shape_div(typename traits_load_V::BlockShape{}, CopyThreadShape{})));
     
     XE_Prefetch_Q prefetchQ {tensorQ};
     XE_Prefetch_K prefetchK {tensorK};

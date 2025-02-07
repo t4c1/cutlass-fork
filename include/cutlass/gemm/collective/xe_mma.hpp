@@ -143,17 +143,14 @@ struct CollectiveMma<
   using  TensorMKL = decltype(make_tensor(make_gmem_ptr(static_cast<ElementA const*>(nullptr)), make_shape(0,0,0), StrideA{}));   //(m, k)
   using  TensorNKL = decltype(make_tensor(make_gmem_ptr(static_cast<ElementB const*>(nullptr)), make_shape(0,0,0), StrideB{}));   //(n, k)
 
-  using Copy_A = decltype(make_tiled_copy(atom_load_A{}.with(
-                                   nullptr, 0, 0),
-                                   Layout<Shape<_1, Int<SubgroupSize>>>{},
-                                   make_layout(make_shape(get<0>(typename traits_load_A::BlockShape{}),
-                                                          get<1>(typename traits_load_A::BlockShape{}) / Int<SubgroupSize>{}))));
+  using CopyThreadShape = Shape<_1, Int<SubgroupSize>>;
+  using Copy_A = decltype(make_tiled_copy(atom_load_A{},
+                                   Layout<CopyThreadShape>{},
+                                   make_layout(shape_div(typename traits_load_A::BlockShape{}, CopyThreadShape{}))));
           
-  using Copy_B = decltype(make_tiled_copy(atom_load_B{}.with(
-                                   nullptr, 0, 0),
-                                   Layout<Shape<_1, Int<SubgroupSize>>>{},
-                                   make_layout(make_shape(get<0>(typename traits_load_B::BlockShape{}),
-                                                          get<1>(typename traits_load_B::BlockShape{}) / Int<SubgroupSize>{}))));
+  using Copy_B = decltype(make_tiled_copy(atom_load_B{},
+                                   Layout<CopyThreadShape>{},
+                                   make_layout(shape_div(typename traits_load_B::BlockShape{}, CopyThreadShape{}))));
   // Host side kernel arguments
   struct Arguments {
     ElementA const* ptr_A;
@@ -182,14 +179,12 @@ struct CollectiveMma<
 
     auto tiled_copy_a = make_tiled_copy(atom_load_A{}.with(
                                    static_cast<ElementA const*>(args.ptr_A), M, K),
-                                   Layout<Shape<_1, Int<SubgroupSize>>>{},
-                                   make_layout(make_shape(get<0>(typename traits_load_A::BlockShape{}),
-                                                          get<1>(typename traits_load_A::BlockShape{}) / Int<SubgroupSize>{})));
+                                   Layout<CopyThreadShape>{},
+                                   make_layout(shape_div(typename traits_load_A::BlockShape{}, CopyThreadShape{})));
     auto tiled_copy_b = make_tiled_copy(atom_load_B{}.with(
                                    static_cast<ElementB const*>(args.ptr_B), N, K),
-                                   Layout<Shape<_1, Int<SubgroupSize>>>{},
-                                   make_layout(make_shape(get<0>(typename traits_load_B::BlockShape{}),
-                                                          get<1>(typename traits_load_B::BlockShape{}) / Int<SubgroupSize>{})));
+                                   Layout<CopyThreadShape>{},
+                                   make_layout(shape_div(typename traits_load_B::BlockShape{}, CopyThreadShape{})));
 
     return Params{tiled_copy_a, tiled_copy_b};
   }
