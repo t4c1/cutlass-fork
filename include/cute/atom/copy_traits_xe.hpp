@@ -167,7 +167,7 @@ struct XE_2D_LD_Unpack {
   copy_unpack(Traits_LD_t const &traits, Tensor<TS, SLayout> const &src,
               Tensor<TD, DLayout> &dst) {
     using dtype = typename Tensor<TD, DLayout>::value_type;
-    constexpr int dtype_bits = cutlass::sizeof_bits_v<dtype>;
+    constexpr int dtype_bits = sizeof_bits_v<dtype>;
 
     static_assert(is_rmem<TD>::value);
     static_assert(size(SLayout{}) * dtype_bits == size<1>(typename Traits_LD_t::SrcLayout{}),
@@ -313,7 +313,7 @@ template <class CopyOp, class StrideIndicator = cute::Stride<int64_t, cute::Int<
               Tensor<TD, DLayout> &dst) {
 
     using dtype = typename Tensor<TS, SLayout>::value_type;
-    constexpr int dtype_bits = cutlass::sizeof_bits_v<dtype>;
+    constexpr int dtype_bits = sizeof_bits_v<dtype>;
 
     static_assert(is_rmem<TS>::value);
     static_assert(size(SLayout{}) * dtype_bits == size<1>(typename Traits_ST_t::SrcLayout{}),
