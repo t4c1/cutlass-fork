@@ -48,7 +48,7 @@ using PvcGemmBF16BF16FP32_RRR_1 = cutlass::gemm::device::GemmConfiguration<
                  Tile<Layout<Shape<_8, _8, _4>, Stride<_1, _32, _8>>,
                       Layout<Shape<_16, _4, _4>, Stride<_1, _64, _16>>, 
                       _32>>,
-        XE_2D_U16x32x32_LD_N, XE_2D_U16x32x32_LD_V,
+        XE_2D_U16x16x32_LD_N, XE_2D_U16x32x32_LD_V,
         Scheduler::Gemm>;
 
 using PvcGemmBF16BF16FP32_RRR_2 = cutlass::gemm::device::GemmConfiguration<
