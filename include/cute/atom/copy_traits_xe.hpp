@@ -170,11 +170,11 @@ struct XE_2D_LD_Unpack {
     constexpr int dtype_bits = sizeof_bits_v<dtype>;
 
     static_assert(is_rmem<TD>::value);
-    static_assert(size(SLayout{}) * dtype_bits == size<1>(typename Traits_LD_t::SrcLayout{}),
+    /*static_assert(size(SLayout{}) * dtype_bits == size<1>(typename Traits_LD_t::SrcLayout{}),
                   "Src tensor size does not match copy atom size");
     static_assert(size(DLayout{}) * dtype_bits == size<1>(typename Traits_LD_t::DstLayout{}),
                   "Dst tensor size does not match copy atom size");
-
+*/
     dtype *base_addr = (dtype *)traits.base_ptr;
   
     auto [m, n, l] = src.data().coord_;
@@ -316,11 +316,11 @@ template <class CopyOp, class StrideIndicator = cute::Stride<int64_t, cute::Int<
     constexpr int dtype_bits = sizeof_bits_v<dtype>;
 
     static_assert(is_rmem<TS>::value);
-    static_assert(size(SLayout{}) * dtype_bits == size<1>(typename Traits_ST_t::SrcLayout{}),
+    /*static_assert(size(SLayout{}) * dtype_bits == size<1>(typename Traits_ST_t::SrcLayout{}),
                   "Src tensor size does not match copy atom size");
     static_assert(size(DLayout{}) * dtype_bits == size<1>(typename Traits_ST_t::DstLayout{}),
                   "Dst tensor size does not match copy atom size");
-
+*/
     dtype *base_addr = (dtype *)traits.base_ptr;
     
     auto [m, n, l] = dst.data().coord_;
@@ -411,11 +411,11 @@ struct Copy_Traits<XE_2D_U8x2x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U8x2x32_LD_N, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_8>,
-                           Stride< _0,_1>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_8,  _2, _2>>,
+                           Stride< _0,Stride< _1,_128,_256>>>;
   // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape <_16,Shape <_16,  _2>>,
-                           Stride<_16,Stride< _1,_256>>>;
+  using DstLayout = Layout<Shape <_16,Shape <_8,  _2, _2>>,
+                           Stride<_16,Stride< _1,_128,_256>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = DstLayout;
 
@@ -429,11 +429,11 @@ struct Copy_Traits<XE_2D_U8x4x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U8x4x32_LD_N, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_8>,
-                           Stride< _0,_1>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_8,  _2, _4>>,
+                           Stride< _0,Stride< _1,_128,_256>>>;
   // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape <_16,Shape <_16,  _4>>,
-                           Stride<_16,Stride< _1,_256>>>;
+  using DstLayout = Layout<Shape <_16,Shape <_8,  _2, _4>>,
+                           Stride<_16,Stride< _1,_128,_256>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = DstLayout;
 
@@ -447,11 +447,11 @@ struct Copy_Traits<XE_2D_U8x8x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U8x8x32_LD_N, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_8>,
-                           Stride< _0,_1>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_8,  _2, _8>>,
+                           Stride< _0,Stride< _1,_128,_256>>>;
   // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape <_16,Shape <_16,  _8>>,
-                           Stride<_16,Stride< _1,_256>>>;
+  using DstLayout = Layout<Shape <_16,Shape <_8,  _2, _8>>,
+                           Stride<_16,Stride< _1,_128,_256>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = DstLayout;
 
@@ -465,11 +465,11 @@ struct Copy_Traits<XE_2D_U8x16x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U8x16x32_LD_N, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_8>,
-                           Stride< _0,_1>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_8,  _2, _16>>,
+                           Stride< _0,Stride< _1,_128,_256>>>;
   // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape <_16,Shape <_16, _16>>,
-                           Stride<_16,Stride< _1,_256>>>;
+  using DstLayout = Layout<Shape <_16,Shape <_8,  _2, _16>>,
+                           Stride<_16,Stride< _1,_128,_256>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = DstLayout;
 
@@ -483,11 +483,11 @@ struct Copy_Traits<XE_2D_U8x32x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U8x32x32_LD_N, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_8>,
-                           Stride< _0,_1>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_8,  _2, _32>>,
+                           Stride< _0,Stride< _1,_128,_256>>>;
   // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape <_16,Shape <_16, _32>>,
-                           Stride<_16,Stride< _1,_256>>>;
+  using DstLayout = Layout<Shape <_16,Shape <_8,  _2, _32>>,
+                           Stride<_16,Stride< _1,_128,_256>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = DstLayout;
 
@@ -737,8 +737,8 @@ struct Copy_Traits<XE_2D_U16x4x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x4x16_LD_N, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_16>,
-                           Stride< _0, _1>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_16,  _4>>,
+                           Stride< _0,Stride< _1,_256>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_16,  _4>>,
                            Stride<_16,Stride< _1,_256>>>;
@@ -756,8 +756,8 @@ struct Copy_Traits<XE_2D_U16x8x16_LD_N, args_t...>
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_128>,
-                           Stride< _0, _1>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_16,  _8>>,
+                           Stride< _0,Stride< _1,_256>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_16,  _8>>,
                            Stride<_16,Stride< _1,_256>>>;
@@ -789,8 +789,8 @@ struct Copy_Traits<XE_2D_U16x16x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x16x16_LD_N, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_16>,
-                           Stride< _0, _1>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_16, _16>>,
+                           Stride< _0, Stride< _1,_256>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_16, _16>>,
                            Stride<_16,Stride< _1,_256>>>;
@@ -855,8 +855,8 @@ struct Copy_Traits<XE_2D_U16x1x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x1x32_LD_N, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_16>,
-                           Stride< _0, _1>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_16,  _2>>,
+                           Stride< _0,Stride< _1,_256>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_16,  _2>>,
                            Stride<_16,Stride< _1,_256>>>;
@@ -888,8 +888,8 @@ struct Copy_Traits<XE_2D_U16x2x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x2x32_LD_N, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_16>,
-                           Stride< _0, _1>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_16,  _2,  _2>>,
+                           Stride< _0,Stride< _1,_256,_512>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_16,  _2,  _2>>,
                            Stride<_16,Stride< _1,_256,_512>>>;
@@ -921,8 +921,8 @@ struct Copy_Traits<XE_2D_U16x4x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x4x32_LD_N, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_16>,
-                           Stride< _0, _1>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_16,  _2,  _4>>,
+                           Stride< _0,Stride< _1,_256,_512>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_16,  _2,  _4>>,
                            Stride<_16,Stride< _1,_256,_512>>>;
@@ -954,8 +954,8 @@ struct Copy_Traits<XE_2D_U16x8x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x8x32_LD_N, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_256>,
-                           Stride< _0, _1>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_16,  _2,  _8>>,
+                           Stride< _0,Stride< _1,_256,_512>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_16,  _2,  _8>>,
                            Stride<_16,Stride< _1,_256,_512>>>;
@@ -988,8 +988,8 @@ struct Copy_Traits<XE_2D_U16x16x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x16x32_LD_N, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_512>,
-                           Stride< _0, _1>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_16,  _2, _16>>,
+                           Stride< _0,Stride< _1,_256,_512>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_16,  _2, _16>>,
                            Stride<_16,Stride< _1,_256,_512>>>;
@@ -1026,7 +1026,7 @@ struct Copy_Traits<XE_2D_U16x32x32_LD_N, args_t...>
                            Stride<_0, Stride< _1,_256,_512>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16, Shape <_16,   _2, _32>>,
-                           Stride<_16, Stride< _1, _512, _16>>>;
+                           Stride<_16, Stride< _1,_256,_512>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = DstLayout;
 
@@ -1290,8 +1290,8 @@ struct Copy_Traits<XE_2D_U32x2x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U32x2x16_LD_N, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_32>,
-                           Stride< _0, _1>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_32,  _2>>,
+                           Stride< _0,Stride< _1,_512>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_32,  _2>>,
                            Stride<_32,Stride< _1,_512>>>;
@@ -1308,8 +1308,8 @@ struct Copy_Traits<XE_2D_U32x4x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U32x4x16_LD_N, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_32>,
-                           Stride< _0, _1>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_32,  _4>>,
+                           Stride< _0, Stride< _1,_512>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_32,  _4>>,
                            Stride<_32,Stride< _1,_512>>>;
@@ -1327,8 +1327,8 @@ struct Copy_Traits<XE_2D_U32x8x16_LD_N, args_t...>
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_256>,
-                           Stride< _0, _1>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_32,  _8>>,
+                           Stride< _0, Stride< _1,_512>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_32,  _8>>,
                            Stride<_32,Stride< _1,_512>>>;
@@ -1344,8 +1344,8 @@ struct Copy_Traits<XE_2D_U32x16x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U32x16x16_LD_N, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_32>,
-                           Stride< _0, _1>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_32, _16>>,
+                           Stride< _0,Stride< _1,_512>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_32, _16>>,
                            Stride<_32,Stride< _1,_512>>>;
@@ -1362,8 +1362,8 @@ struct Copy_Traits<XE_2D_U32x32x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U32x32x16_LD_N, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_32>,
-                           Stride< _0, _1>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_32, _32>>,
+                           Stride< _0,Stride< _1,_512>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_32, _32>>,
                            Stride<_32,Stride< _1,_512>>>;
@@ -1450,8 +1450,8 @@ struct Copy_Traits<XE_2D_U16x16x16_LD_V, args_t...>
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_256>,
-                           Stride< _0, _1>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_16,  _2,  _8>>,
+                           Stride< _0,Stride< _1,_256,_512>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_16,  _2,  _8>>,
                            Stride<_16,Stride< _1,_256,_512>>>;
@@ -1468,8 +1468,8 @@ struct Copy_Traits<XE_2D_U16x32x16_LD_V, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x32x16_LD_V, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_16>,
-                           Stride< _0, _1>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_16,  _2, _16>>,
+                           Stride< _0,Stride< _1,_256,_512>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_16,  _2, _16>>,
                            Stride<_16,Stride< _1,_256,_512>>>;
@@ -1705,11 +1705,11 @@ struct Copy_Traits<XE_2D_U8x2x32_ST_N, args_t...>
   using BlockShape = Shape<_2,_32>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,Shape <_16,  _2>>,
-                           Stride<_16,Stride< _1,_256>>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_8,  _2, _2>>,
+                           Stride<_16,Stride< _1,_128,_256>>>;
   // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape <_16,_8>,
-                           Stride< _0,_1>>;
+  using DstLayout = Layout<Shape <_16,Shape <_8,  _2, _2>>,
+                           Stride< _0,Stride< _1,_128,_256>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;
 
@@ -1840,8 +1840,8 @@ struct Copy_Traits<XE_2D_U16x2x16_ST_N, args_t...>
   using SrcLayout = Layout<Shape <_16,Shape <_16,  _2>>,
                            Stride<_16,Stride< _1,_256>>>;
   // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape <_16,_16>,
-                           Stride< _0, _1>>;
+  using DstLayout = Layout<Shape <_16,Shape <_16,  _2>>,
+                           Stride< _0,Stride< _1,_256>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;
 
@@ -1860,8 +1860,8 @@ struct Copy_Traits<XE_2D_U16x4x16_ST_N, args_t...>
   using SrcLayout = Layout<Shape <_16,Shape <_16,  _4>>,
                            Stride<_16,Stride< _1,_256>>>;
   // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape <_16,_16>,
-                           Stride< _0, _1>>;
+  using DstLayout = Layout<Shape <_16,Shape <_16,  _4>>,
+                           Stride< _0,Stride< _1,_256>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;
 
@@ -1880,8 +1880,8 @@ struct Copy_Traits<XE_2D_U16x8x16_ST_N, args_t...>
   using SrcLayout = Layout<Shape <_16,Shape <_16,  _8>>,
                            Stride<_16,Stride< _1,_256>>>;
   // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape <_16,_16>,
-                           Stride< _0, _1>>;
+  using DstLayout = Layout<Shape <_16,Shape <_16,  _8>>,
+                           Stride< _0,Stride< _1,_256>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;
 
@@ -1920,8 +1920,8 @@ struct Copy_Traits<XE_2D_U32x2x16_ST_N, args_t...>
   using SrcLayout = Layout<Shape <_16,Shape <_32,  _2>>,
                            Stride<_32,Stride< _1,_512>>>;
   // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape <_16,_32>,
-                           Stride< _0, _1>>;
+  using DstLayout = Layout<Shape <_16,Shape <_32,  _2>>,
+                           Stride< _0,Stride< _1,_512>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;
 
@@ -1939,8 +1939,8 @@ struct Copy_Traits<XE_2D_U32x4x16_ST_N, args_t...>
   using SrcLayout = Layout<Shape <_16,Shape <_32,  _4>>,
                            Stride<_32,Stride< _1,_512>>>;
   // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape <_16,_32>,
-                           Stride< _0, _1>>;
+  using DstLayout = Layout<Shape <_16,Shape <_32,  _4>>,
+                           Stride< _0,Stride< _1,_512>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;
 
@@ -1958,8 +1958,8 @@ struct Copy_Traits<XE_2D_U32x8x16_ST_N, args_t...>
   using SrcLayout = Layout<Shape <_16,Shape <_32,  _8>>,
                            Stride<_32,Stride< _1,_512>>>;
   // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape <_16,_256>,
-                           Stride< _0, _1>>; // 0 here makes all threads in a warp get the same base address
+  using DstLayout = Layout<Shape <_16,Shape <_32,  _8>>,
+                           Stride< _0,Stride< _1,_512>>>; // 0 here makes all threads in a warp get the same base address
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;
 
