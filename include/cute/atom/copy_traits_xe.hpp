@@ -170,11 +170,11 @@ struct XE_2D_LD_Unpack {
     constexpr int dtype_bits = sizeof_bits_v<dtype>;
 
     static_assert(is_rmem<TD>::value);
-    /*static_assert(size(SLayout{}) * dtype_bits == size<1>(typename Traits_LD_t::SrcLayout{}),
+    static_assert(size(SLayout{}) * dtype_bits == size<1>(typename Traits_LD_t::SrcLayout{}),
                   "Src tensor size does not match copy atom size");
     static_assert(size(DLayout{}) * dtype_bits == size<1>(typename Traits_LD_t::DstLayout{}),
                   "Dst tensor size does not match copy atom size");
-*/
+
     dtype *base_addr = (dtype *)traits.base_ptr;
   
     auto [m, n, l] = src.data().coord_;
@@ -316,11 +316,11 @@ template <class CopyOp, class StrideIndicator = cute::Stride<int64_t, cute::Int<
     constexpr int dtype_bits = sizeof_bits_v<dtype>;
 
     static_assert(is_rmem<TS>::value);
-    /*static_assert(size(SLayout{}) * dtype_bits == size<1>(typename Traits_ST_t::SrcLayout{}),
+    static_assert(size(SLayout{}) * dtype_bits == size<1>(typename Traits_ST_t::SrcLayout{}),
                   "Src tensor size does not match copy atom size");
     static_assert(size(DLayout{}) * dtype_bits == size<1>(typename Traits_ST_t::DstLayout{}),
                   "Dst tensor size does not match copy atom size");
-*/
+
     dtype *base_addr = (dtype *)traits.base_ptr;
     
     auto [m, n, l] = dst.data().coord_;
@@ -1576,8 +1576,8 @@ struct Copy_Traits<XE_2D_U32x16x2_LD_T, args_t...>
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_32>,
-                           Stride< _0, _1>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_32, _2>>,
+                           Stride< _0,Stride< _1,_32>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_32, _2>>,
                            Stride<_64,Stride< _1,_32>>>;
@@ -1595,8 +1595,8 @@ struct Copy_Traits<XE_2D_U32x16x4_LD_T, args_t...>
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_32>,
-                           Stride< _0, _1>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_32, _4>>,
+                           Stride< _0,Stride< _1,_32>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_32, _4>>,
                            Stride<_64,Stride< _1,_32>>>;
@@ -1614,8 +1614,8 @@ struct Copy_Traits<XE_2D_U32x16x8_LD_T, args_t...>
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_32>,
-                           Stride< _0, _1>>;
+  using SrcLayout = Layout<Shape <_16,Shape <_32, _8>>,
+                           Stride< _0,Stride< _1,_32>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape < _16,Shape <_32, _8>>,
                            Stride<_128,Stride< _1,_32>>>;
