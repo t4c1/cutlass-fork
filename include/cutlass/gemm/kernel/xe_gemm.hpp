@@ -195,13 +195,8 @@ public:
       batch_count = cute::size<3>(params.problem_shape);
     }
     return dim3(
-        #ifdef CUTLASS_SYCL_SWITCH_WG
-            cute::size(cute::ceil_div(cute::shape<0>(params.problem_shape), cute::shape<0>(WorkgroupTileShape{}))),
-            cute::size(cute::ceil_div(cute::shape<1>(params.problem_shape), cute::shape<1>(WorkgroupTileShape{}))),
-        #else
             cute::size(cute::ceil_div(cute::shape<1>(params.problem_shape), cute::shape<1>(WorkgroupTileShape{}))),
             cute::size(cute::ceil_div(cute::shape<0>(params.problem_shape), cute::shape<0>(WorkgroupTileShape{}))),
-        #endif
             batch_count
     );
   }
