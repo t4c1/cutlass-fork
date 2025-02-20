@@ -28,6 +28,11 @@
 
 
 cutlass_example_add_executable(
+  copy_reverse_engineer
+  copy_reverse_engineer.cpp
+)
+
+cutlass_example_add_executable(
   pvc_gemm
   pvc_gemm.cpp
 )
