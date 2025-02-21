@@ -251,7 +251,7 @@ public:
     auto [batch, num_heads, seq_len, head_size] = problem_shape;
     
     // Represent the full output tensor
-    Tensor mO_mnl = params.xe_store_o.get_pvc_tensor(make_shape(batch, num_heads, head_size));
+    Tensor mO_mnl = params.xe_store_o.get_pvc_tensor(make_shape(seq_len, head_size, batch * num_heads));
 
     // Tile the output tensor per WG
     Tensor g_wg_O = local_tile(mO_mnl, select<0,1>(CtaTileMNK{}), make_coord(m_coord,n_coord,l_coord));             // (BLK_M,BLK_N,m,n,l)
