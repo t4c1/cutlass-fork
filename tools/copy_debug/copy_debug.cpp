@@ -29,8 +29,6 @@
  *
  **************************************************************************************************/
 
-#include "cutlass/detail/layout.hpp"
-
 #include <cute/tensor.hpp>
 #include <sycl/sycl.hpp>
 #include <syclcompat.hpp>
@@ -40,6 +38,7 @@
 #include <cutlass/cutlass.h>
 
 using namespace syclcompat::experimental;
+using namespace cute;
 
 #define SUBGROUP_SIZE (16)
 
@@ -63,7 +62,7 @@ void copy_kernel(TensorS S) {
     Layout<CopyThreadShape>{},
     make_layout(shape_div(typename traits_load::BlockShape{}, CopyThreadShape{})));
     
-  auto thr_copy_load = tiled_copy_load.get_slice(cutlass::get_sub_group_local_id());
+  auto thr_copy_load = tiled_copy_load.get_slice(ThreadIdxX());
 
   using actual_fragment_size = std::conditional_t<std::is_same_v<fragment_size, void>, C<Atom_load::NumValDst>, fragment_size>;
   Tensor fragment = make_tensor<Element>(make_shape(actual_fragment_size{},_1{},_1{}));
