@@ -254,8 +254,8 @@ struct CollectiveMmaAttention<
 
     // Create fragments
     // TODO(Codeplay): fix this, this is probably not general
-    Tensor tCrA = make_tensor<ElementQ>(tCgA(_,_,_,0).shape());
-    Tensor tCrB = make_tensor<ElementK>(tCgB(_,_,_,0).shape(), make_stride(_1{}, shape<0>(tCgB) * shape<2>(tCgB), shape<0>(tCgB)));
+    Tensor tCrA = make_tensor<ElementQ>(params.gmem_tiled_copy_q.make_fragment_layout(tCgA(_,_,_,0).shape()));
+    Tensor tCrB = make_tensor<ElementK>(params.gmem_tiled_copy_k.make_fragment_layout(tCgB(_,_,_,0).shape()));
     
     // Retile registers for copies
     Tensor tArA = thr_copy_A.retile_D(tCrA);
@@ -323,7 +323,7 @@ struct CollectiveMmaAttention<
     TiledMma tiled_mma;
     auto thread_mma = tiled_mma.get_slice(thread_idx & ~15);
     Tensor tCgB = thread_mma.partition_B(gB);
-    Tensor tCrB = make_tensor<ElementV>(tCgB(_,_,_,0).shape(), make_stride(_1{}, shape<0>(tCgB) * shape<2>(tCgB), shape<0>(tCgB)));
+    Tensor tCrB = make_tensor<ElementV>(params.gmem_tiled_copy_v.make_fragment_layout(tCgB(_,_,_,0).shape()));
 
     // Partition the copying of A and B tiles across the threads
     auto gmem_thr_copy_B = params.gmem_tiled_copy_v.get_slice(thread_idx);

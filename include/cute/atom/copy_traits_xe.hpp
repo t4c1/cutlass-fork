@@ -257,6 +257,22 @@ struct XE_2D_LD_Unpack {
     return make_counting_tensor(make_layout(g_shape, make_stride(E<0>(), E<1>(), E<2>())));
   }
 
+  template <class TLShape>
+  CUTE_HOST_DEVICE constexpr auto make_fragment_layout(TLShape&& fragment_top_level_shape) const {
+    auto [mma_atom_size, total_mma_atom_iters_M, total_mma_atom_iters_N] = fragment_top_level_shape;
+    auto copy_size_M = size<0>(BlockShape{}); //TODO(Codeplay): We could use ValLayoutDst once it is consistent
+    auto copy_size_N = size<1>(BlockShape{}) / size(typename Traits_LD_t::ThrID{});
+    assert(copy_size_M >= mma_atom_size);
+    auto mma_atom_iters_in_copy_M = copy_size_M / mma_atom_size;
+    auto mma_atom_iters_in_copy_N = copy_size_N;
+    auto copy_iters_M = total_mma_atom_iters_M / mma_atom_iters_in_copy_M;
+    auto copy_iters_N = total_mma_atom_iters_N / mma_atom_iters_in_copy_N;
+    auto order = std::conditional_t<is_convention_MN, Step<_0, Step<_1,_3>, Step<_2,_4>>, Step<_0, Step<_2,_4>, Step<_1,_3>>>{};
+    return make_ordered_layout(make_shape(mma_atom_size, 
+                                          make_shape(mma_atom_iters_in_copy_M, copy_iters_M), 
+                                          make_shape(mma_atom_iters_in_copy_N, copy_iters_N)), order);
+  };
+
   template <class... TensorArgs>
   static constexpr auto with(Tensor<TensorArgs...> const &tensor) {
       return Traits_LD_t{tensor};

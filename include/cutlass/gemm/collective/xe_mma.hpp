@@ -234,14 +234,9 @@ struct CollectiveMma<
     Tensor tCgA = thr_mma.partition_A(gA);
     Tensor tCgB = thr_mma.partition_B(gB);
 
-    // Create fragments
-    // TODO(Codeplay): fix this, this is probably not general
-    Tensor tCrA = make_tensor<ElementA>(tCgA(_,_,_,0).shape());
-    Tensor tCrB = make_tensor<ElementB>(tCgB(_,_,_,0).shape(), make_stride(_1{}, shape<0>(tCgB) * shape<2>(tCgB), shape<0>(tCgB)));
-    //Tensor tCrA = make_tensor<ElementA>(make_ordered_layout(tCgA(_,_,_,0).shape(), Step<_0, _2, _1>{}));
-    //Tensor tCrB = make_tensor<ElementB>(make_ordered_layout(tCgB(_,_,_,0).shape(), Step<_0, _2, _1>{}));
-
-
+    Tensor tCrA = make_tensor<ElementA>(mainloop.copy_A.make_fragment_layout(tCgA(_,_,_,0).shape()));
+    Tensor tCrB = make_tensor<ElementB>(mainloop.copy_B.make_fragment_layout(tCgB(_,_,_,0).shape()));
+  
     // Retile registers for copies
     Tensor tArA = thr_copy_A.retile_D(tCrA);
     Tensor tBrB = thr_copy_B.retile_D(tCrB);
@@ -310,36 +305,11 @@ struct CollectiveMma<
       }
     }
 
-    if (cutlass::thread(0, 0)) {
-      Tensor tAgA2 = thr_copy_A.partition_S(gA);
-      Tensor tAgA3 = thr_copy_A.partition_S(tCgA);
-      print("======================= A: \n");
-      print("gA : "); print(gA); print("\n");
-      print("tCgA : "); print(tCgA); print("\n");
-      print("tAgA : "); print(tAgA); print("\n");
-      print("tAgA2 : "); print(tAgA2); print("\n");
-      print("tAgA3 : "); print(tAgA3); print("\n");
-      print("tAgA(_,0,0,0) : "); print(tAgA(_,0,0,0)); print("\n");
-      print("tAgA(_,1,0,0) : "); print(tAgA(_,1,0,0)); print("\n");
-      print("tCrA : "); print(tCrA); print("\n");
-      print("tArA : "); print(tArA); print("\n");
-      print("tArA(_,0,0) : "); print(tArA(_,0,0)); print("\n");
-      print("tArA(_,1,0) : "); print(tArA(_,1,0)); print("\n");
-    }
     CUTLASS_PRAGMA_UNROLL
     for (int k_tile = 0, k = k_start_idx; k_tile < k_tile_count; ++k_tile, ++k, ++prefetch_k) {
       // Copy gmem to rmem for the first k_tile
-      if (cutlass::thread(0, 0)) {
-        print("copy A:\n");
-      }
       copy(mainloop.copy_A, tAgA(_,_,_,k), tArA);
-      if (cutlass::thread(0, 0)) {
-        print("copy B:\n");
-      }
       copy(mainloop.copy_B, tBgB(_,_,_,k), tBrB);
-      if (cutlass::thread(0, 0)) {
-        print("tile done\n");
-      }
 
       if(prefetch_k < k_tile_count) {
         if constexpr(cute::detail::has_prefetch<GmemTiledCopyA>) {

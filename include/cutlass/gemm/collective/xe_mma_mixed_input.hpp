@@ -283,9 +283,8 @@ struct CollectiveMma<
     Tensor tCgB = thr_mma.partition_B(gB);
 
     // Create fragments
-    // TODO(Codeplay): fix this, this is probably not general
-    Tensor tCrA = make_tensor<ElementB>(tCgA(_,_,_,0).shape());
-    Tensor tCrB = make_tensor<ElementB>(tCgB(_,_,_,0).shape(), make_stride(_1{}, shape<0>(tCgB) * shape<2>(tCgB), shape<0>(tCgB)));
+    Tensor tCrA = make_tensor<ElementB>(mainloop.copy_A.make_fragment_layout(tCgA(_,_,_,0).shape()));
+    Tensor tCrB = make_tensor<ElementB>(mainloop.copy_B.make_fragment_layout(tCgB(_,_,_,0).shape()));
 
     // narrow input fragment
     Tensor tCrA_input = make_tensor<ElementA>(tCrA.shape());
