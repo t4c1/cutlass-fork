@@ -1,5 +1,5 @@
 
-# Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -34,7 +34,7 @@ cutlass_example_add_executable(
   35_gemm_softmax
   gemm_softmax.cu
   )
-else()
+elseif (SYCL_NVIDIA_TARGET)
 cutlass_example_add_executable(
   35_gemm_online_softmax
   gemm_online_softmax.cpp

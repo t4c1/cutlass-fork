@@ -46,6 +46,7 @@
 #include "cutlass/util/reference/device/gemm_complex.h"
 #include "cutlass/util/reference/device/tensor_compare.h"
 #include "common.hpp"
+#include "helper.h"
 
 #include "cutlass/gemm/kernel/xe_persistent_tile_scheduler_params_streamk.hpp"
 using namespace cute;
@@ -230,7 +231,7 @@ struct ExampleRunner {
     block_ref_D.reset(M * N * L);
   }
 
-  void run(const Options& options, const cutlass::KernelHardwareInfo& hw_info) {
+  cutlass::Status run(const Options& options, const cutlass::KernelHardwareInfo& hw_info) {
     ProblemShapeType problem_size = ProblemShapeType{options.m, options.n, options.k, options.l};
 
     initialize(problem_size);
@@ -252,12 +253,12 @@ struct ExampleRunner {
     size_t workspace_size = Gemm::get_workspace_size(arguments);
     cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
 
-    gemm_op.can_implement(arguments);
+    CUTLASS_CHECK(gemm_op.can_implement(arguments));
 
-    gemm_op.initialize(arguments, workspace.get());
+    CUTLASS_CHECK(gemm_op.initialize(arguments, workspace.get()));
 
     // Run the GEMM
-    gemm_op.run();
+    CUTLASS_CHECK(gemm_op.run());
 
     syclcompat::wait();
 
@@ -265,7 +266,9 @@ struct ExampleRunner {
     bool passed = verify(problem_size, options.alpha, options.beta);
     std::cout << "Disposition: " << (passed ? "Passed" : "Failed") << std::endl;
 
-    if (passed && options.iterations > 0) {
+    if(!passed) return cutlass::Status::kErrorInternal;
+
+    if (options.iterations > 0) {
       GPU_Clock timer;
       float elapsed_time_seconds = 0.f;
       for (int i = 0; i < options.iterations; ++i) {
@@ -293,7 +296,7 @@ struct ExampleRunner {
       printf("Cutlass GEMM Performance:     [%4.3f]TFlop/s  (%6.4f)ms\n", tflops / cute_time, cute_time*1000);
     }
 
-    return;
+    return cutlass::Status::kSuccess;
   }
 
 };
@@ -349,11 +352,13 @@ int main(int argc, const char** argv)
   // Workgroup-level tile
   using TileShape = Shape<_256, _256, _32>;
 
-  using TiledMma = TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-          Layout<Shape<_8,_4,_1>>,
-          Tile<_64,_64,_32>>; // Subgroup level-tile
+  using TiledMma =
+      TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
+               Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>,
+               Tile<Layout<Shape<_8, _8, _4>, Stride<_1, _32, _8>>,
+                    Layout<Shape<_16, _4, _4>, Stride<_1, _64, _16>>, _32>>;
 
-  constexpr int PipelineStages = 3;
+  constexpr int PipelineStages = 2;
   using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages>;
   using EpilogueDispatchPolicy = cutlass::epilogue::IntelPVCEpilogue;
 
@@ -399,7 +404,7 @@ int main(int argc, const char** argv)
 
   ExampleRunner<Gemm> runner;
 
-  runner.run(options, hw_info);
+  CUTLASS_CHECK(runner.run(options, hw_info));
 
   return 0;
 }

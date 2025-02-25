@@ -38,58 +38,129 @@
 
 namespace cute {
 
-namespace detail
-{
-  template<class CopyOp>
-  struct is_transpose : bool_constant<false> {};
+namespace detail {
 
-  template<>
-  struct is_transpose<XE_2D_U16x16x8_LD_T> : bool_constant<true>{};
+static constexpr auto subgroup_size = 16;
 
-  template<>
-  struct is_transpose<XE_2D_U16x16x16_LD_T> : bool_constant<true>{};
+// ==========  size_of_inst  ==========
+template <class T, class dtype, class = void>
+static constexpr auto size_of_inst = sizeof(dtype);
 
-  template<>
-  struct is_transpose<XE_2D_U32x16x2_LD_T> : bool_constant<true>{};
+template <class T, class dtype>
+static constexpr auto size_of_inst<T, dtype, cute::void_t<typename T::inst_dtype>> = sizeof(typename T::inst_dtype);
 
-  template<>
-  struct is_transpose<XE_2D_U32x16x4_LD_T> : bool_constant<true>{};
 
-  template<>
-  struct is_transpose<XE_2D_U32x16x8_LD_T> : bool_constant<true>{};
+// ==========  value_layout_t  ==========
+template <class T, class = void>
+struct value_layout_t {
+  using type = decltype(make_layout(make_shape(get<0>(typename T::BlockShape{}),
+                                                            get<1>(typename T::BlockShape{})
+                                                                / Int<detail::subgroup_size>{})));
+};
 
-  template<>
-  struct is_transpose<XE_2D_U64x8x1_LD_T> : bool_constant<true>{};
+template <class T>
+struct value_layout_t<T, cute::void_t<typename T::ValueShape>> {
+  using type = decltype(make_layout(make_shape(get<0>(typename T::ValueShape{}),
+                                                            get<1>(typename T::ValueShape{})
+                                                                / Int<detail::subgroup_size>{})));
+};
 
-  template<>
-  struct is_transpose<XE_2D_U64x8x2_LD_T> : bool_constant<true>{};
 
-  template<>
-  struct is_transpose<XE_2D_U64x8x4_LD_T> : bool_constant<true>{};
+// ==========  is_transpose_load  ==========
+template <class, class = void>
+static constexpr bool is_transpose_load = false;
 
-  template <class, class Enable = void> constexpr bool has_inst_dtype = false;
+template <class T>
+static constexpr bool is_transpose_load<T, cute::void_t<std::bool_constant<T::is_transpose>>> = T::is_transpose;
 
-  template <class T>
-  constexpr bool has_inst_dtype<T, cute::void_t<typename T::inst_dtype>> = true;
-} // namespace detail end
 
-template <class CopyOp, class... ArgTs> struct XE_2D_LD_Unpack {
+// ==========  is_stride_leftmost  ==========
+template <class T, class = void>
+static constexpr bool is_stride_leftmost = std::is_same_v<_1, decltype(get<0>(T{}))>;
+
+template <class T>
+static constexpr bool is_stride_leftmost<T, cute::void_t<decltype(T{}.stride())>> = std::is_same_v<_1, decltype(get<0>(T{}.stride()))>;
+
+
+} // end namespace detail
+
+
+template <uint32_t dim, class Tensor_t>
+static constexpr auto append_pvc_tensor(Tensor_t const &t0, uint32_t shape, uint32_t stride) {
+  return make_tensor(make_inttuple_iter(t0.data()), append(t0.layout(), make_layout(shape, E<dim>{} * stride)));
+}
+
+template <class CopyOp, class StrideIndicator = cute::Stride<int64_t, cute::Int<1>, int64_t>>
+struct XE_2D_LD_Unpack {
+
+  using BlockShape = typename CopyOp::BlockShape;
+  using Value_Layout = typename detail::value_layout_t<CopyOp>::type;
+  using Traits_LD_t = Copy_Traits<CopyOp, StrideIndicator>;
+
+  static constexpr auto stride_rank = rank(StrideIndicator{});
+  static_assert(stride_rank == 2 || stride_rank == 3);
+
+  // Assume LD_T/LD_N will indicate ColumnMajor and RowMajor
+  static constexpr bool is_column_major = detail::is_transpose_load<CopyOp>;
+
+  // We need reverse some parameters becasue intel xe 2d copy intrinsic always assume the matrix is (M, N):(N, 1) convention
+  static constexpr bool is_need_reversed = detail::is_stride_leftmost<StrideIndicator>;
+
+  // For a logic matrix M-rows and N-columns, user can pass it with the convention (M, N):(N, 1), also can pass it with convention (N, M):(1, N).
+  // It mean (M, N):(N, 1) convention if 'is_convention_MN' is true, (N, M):(1, N) convention otherwise.
+  static constexpr bool is_convention_MN = !(is_need_reversed ^ is_column_major);
+
+  // 2d copy parameters
   const void *base_ptr;
   uint32_t width;
   uint32_t height;
   uint32_t pitch;
+  uint32_t stride_l = 0;
 
-  XE_2D_LD_Unpack(const void *ptr, uint32_t const &w,
-                  uint32_t const &h, uint32_t const &p)
-      : base_ptr(ptr), width(w), height(h), pitch(p) {}
 
-  template <class TraitsArgs>
-  XE_2D_LD_Unpack(TraitsArgs const &traits) : base_ptr(traits.base_ptr),
-              width(traits.width), height(traits.height), pitch(traits.pitch) {}
+
+  XE_2D_LD_Unpack(const void *ptr, uint32_t y,
+                 uint32_t x, uint32_t p = 0) : base_ptr(ptr) {
+    if constexpr (is_need_reversed) {
+      width = y;
+      height = x;
+    }
+    else {
+      width = x;
+      height = y;
+    }
+
+    pitch = (p == 0 ? width : p);
+  }
+
+  template <class... TensorArgs>
+  XE_2D_LD_Unpack(Tensor<TensorArgs...> const &tensor) {
+    base_ptr = tensor.data().get();
+
+    if constexpr (is_need_reversed)
+    {
+      width = size<0>(tensor.shape());
+      height = size<1>(tensor.shape());
+      pitch = size<1>(tensor.stride());
+    }
+    else
+    {
+      width = size<1>(tensor.shape());
+      height = size<0>(tensor.shape());
+      pitch = size<0>(tensor.stride());
+    }
+
+    if constexpr (stride_rank == 3) {
+      stride_l = size<2>(tensor.stride());
+    }
+  }
+
+  XE_2D_LD_Unpack(Traits_LD_t const &traits) : base_ptr(traits.base_ptr),
+                  width(traits.width), height(traits.height), pitch(traits.pitch),
+                  stride_l(traits.stride_l) {}
 
   XE_2D_LD_Unpack() {}
 
-  using Traits_LD_t = Copy_Traits<CopyOp, ArgTs...>;
 
   template <class TS, class SLayout, class TD, class DLayout>
   CUTE_HOST_DEVICE friend constexpr void
@@ -100,19 +171,16 @@ template <class CopyOp, class... ArgTs> struct XE_2D_LD_Unpack {
     using dtype = typename Tensor<TD, DLayout>::value_type;
 
     dtype *base_addr = (dtype *)traits.base_ptr;
-
+  
     auto [m, n, l] = src.data().coord_;
+    int x = is_need_reversed ? m : n;
+    int y = is_need_reversed ? n : m;
+    constexpr auto inst_size = detail::size_of_inst<CopyOp, dtype>;
 
-    auto inst_size = sizeof(dtype);
-
-    if constexpr (detail::has_inst_dtype<CopyOp>) {
-      inst_size = sizeof(typename CopyOp::inst_dtype);
-    }
-
-    CopyOp::copy(base_addr + l * traits.width * traits.height,
+    CopyOp::copy(base_addr + l * traits.stride_l,
                  traits.width * sizeof(dtype), traits.height,
                  traits.pitch * sizeof(dtype),
-                 intel::coord_t{(int)(n * sizeof(dtype) / inst_size), (int)(m)},
+                 intel::coord_t{(int)(x * sizeof(dtype) / inst_size), y},
                  &*dst.data());
   }
 
@@ -128,10 +196,30 @@ template <class CopyOp, class... ArgTs> struct XE_2D_LD_Unpack {
 
     auto [m, n, l] = src.data().coord_;
 
-    CopyOp::PREFETCH::copy((void *)(base_addr + l * atom.width * atom.height),
+    CopyOp::PREFETCH::copy((void *)(base_addr + l * atom.stride_l),
                            atom.width * sizeof(dtype), atom.height,
                            atom.pitch * sizeof(dtype),
                            intel::coord_t{(int)n, (int)m});
+  }
+
+  template <class Coord, class GShape>
+  CUTE_HOST_DEVICE constexpr auto get_pvc_tensor(Coord const &coord,
+                                                 GShape const &shape) const {
+
+    auto R = rank(GShape{});
+    static_assert(R == 3, "mismatch rank");
+
+    using basis_t =  make_seq<rank(BlockShape{})>;
+
+    using shape_mn = std::conditional_t<is_convention_MN, BlockShape, decltype(reverse(BlockShape{}))>;
+
+    auto new_shape = cute::tuple_cat(make_shape(_1{}), take<R - 2, R>(shape));
+    auto new_stride = cute::tuple_cat(make_stride(_1{}), transform(basis_t{}, shape_mn{},
+                                                                  [&](auto i, auto s){
+                                                                      return E<i>{} * s;
+                                                                  }));
+    return make_tensor(make_inttuple_iter(coord),
+                        make_layout(new_shape, new_stride));
   }
 
   template <class GCoord, class GShape, class GStride, class Basis = decltype(make_seq<rank(GStride{})>{})>
@@ -150,29 +238,60 @@ template <class CopyOp, class... ArgTs> struct XE_2D_LD_Unpack {
                        make_layout(t_shape, t_stride));
   }
 
-  template <class T1, class T2, class... TraitsArgs>
-  static constexpr auto with(T1 && arg1, T2 && arg2, TraitsArgs&&... args) {
-      return Traits_LD_t{arg1, arg2, args...};
+  template <class... TensorArgs>
+  static constexpr auto with(Tensor<TensorArgs...> const &tensor) {
+      return Traits_LD_t{tensor};
+  }
+
+  template<class T0, class T1, class... Ts>
+  static constexpr auto with(T0 && arg0, T1 && arg1, Ts&&... args) {
+      return Traits_LD_t{arg0, arg1, args...};
   }
 };
 
-template <class CopyOp, class... ArgTs> struct XE_2D_ST_Unpack {
+template <class CopyOp, class StrideIndicator = cute::Stride<int64_t, cute::Int<1>, int64_t>> struct XE_2D_ST_Unpack {
+  using Traits_ST_t = Copy_Traits<CopyOp, StrideIndicator>;
+  using BlockShape = typename CopyOp::BlockShape;
+  using Value_Layout = decltype(make_layout(make_shape(get<0>(BlockShape{}),
+                                                       get<1>(BlockShape{})
+                                                          / Int<detail::subgroup_size>{})));
+
+  static constexpr auto stride_rank = rank(StrideIndicator{});
+  static_assert(stride_rank == 2 || stride_rank == 3);
+
+  static constexpr bool is_convention_MN = true;
+
   const void *base_ptr;
   uint32_t width;
   uint32_t height;
   uint32_t pitch;
+  uint32_t stride_l = 0;
 
-  XE_2D_ST_Unpack(const void *ptr, uint32_t const &w,
-                  uint32_t const &h, uint32_t const &p)
-      : base_ptr(ptr), width(w), height(h), pitch(p) {}
+  XE_2D_ST_Unpack(const void *ptr, uint32_t y,
+                 uint32_t x, uint32_t p = 0) : base_ptr(ptr) {
+      width = x;
+      height = y;
+      pitch = (p == 0 ? width : p);
+  }
 
-  template <class TraitsArgs>
-  XE_2D_ST_Unpack(TraitsArgs const &traits)  : base_ptr(traits.base_ptr),
-                  width(traits.width), height(traits.height), pitch(traits.pitch) {}
+  template <class... TensorArgs>
+  XE_2D_ST_Unpack(Tensor<TensorArgs...> const &tensor) {
+    base_ptr = tensor.data().get();
+    width = size<1>(tensor.shape());
+    height = size<0>(tensor.shape());
+    pitch = size<0>(tensor.stride());
+
+    if constexpr (stride_rank == 3) {
+      stride_l = size<2>(tensor.stride());
+    }
+  }
+
+  XE_2D_ST_Unpack(Traits_ST_t const &traits)  : base_ptr(traits.base_ptr),
+                  width(traits.width), height(traits.height), pitch(traits.pitch),
+                  stride_l(traits.stride_l) {}
 
   XE_2D_ST_Unpack() {}
 
-  using Traits_ST_t = Copy_Traits<CopyOp, ArgTs...>;
 
   template <class TS, class SLayout, class TD, class DLayout>
   CUTE_HOST_DEVICE friend constexpr void
@@ -186,10 +305,28 @@ template <class CopyOp, class... ArgTs> struct XE_2D_ST_Unpack {
 
     auto [m, n, l] = dst.data().coord_;
 
-    CopyOp::copy(base_addr + l * traits.width * traits.height,
+    CopyOp::copy(base_addr + l * traits.stride_l,
                  (int)(traits.width * sizeof(dtype)), (int)(traits.height),
                  (int)(traits.pitch * sizeof(dtype)),
                  intel::coord_t{(int)n, (int)m}, &*src.data());
+  }
+
+  template <class Coord, class GShape>
+  CUTE_HOST_DEVICE constexpr auto get_pvc_tensor(Coord const &coord,
+                                                 GShape const &shape) const {
+
+    auto R = rank(GShape{});
+    static_assert(R == 3, "mismatch rank");
+
+    using basis_t =  make_seq<rank(BlockShape{})>;
+
+    auto new_shape = cute::tuple_cat(make_shape(_1{}), take<R - 2, R>(shape));
+    auto new_stride = cute::tuple_cat(make_stride(_1{}), transform(basis_t{}, BlockShape{},
+                                                                  [&](auto i, auto s){
+                                                                      return E<i>{} * s;
+                                                                  }));
+    return make_tensor(make_inttuple_iter(coord),
+                        make_layout(new_shape, new_stride));
   }
 
   template <class GCoord, class GShape, class GStride, class Basis = decltype(make_seq<rank(GStride{})>{})>
@@ -208,10 +345,16 @@ template <class CopyOp, class... ArgTs> struct XE_2D_ST_Unpack {
                        make_layout(t_shape, t_stride));
   }
 
-  template <class T1, class T2, class... TraitsArgs>
-  static constexpr auto with(T1 && arg1, T2 && arg2, TraitsArgs&&... args) {
-      return Traits_ST_t{arg1, arg2, args...};
+  template <class... TensorArgs>
+  static constexpr auto with(Tensor<TensorArgs...> const &tensor) {
+    return Traits_ST_t{tensor};
   }
+
+  template<class T0, class T1, class... Ts>
+  static constexpr auto with(T0 && arg0, T1 && arg1, Ts&&... args) {
+      return Traits_ST_t{arg0, arg1, args...};
+  }
+
 };
 
 // clang-format off
@@ -219,7 +362,6 @@ template <class CopyOp, class... ArgTs> struct XE_2D_ST_Unpack {
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x1x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U8x1x32_LD_N, args_t...> {
-  using Shape_MN = Shape<_1, _32>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_8>,
@@ -238,7 +380,6 @@ struct Copy_Traits<XE_2D_U8x1x32_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x2x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U8x2x32_LD_N, args_t...> {
-  using Shape_MN = Shape<_2, _32>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_8>,
@@ -257,7 +398,6 @@ struct Copy_Traits<XE_2D_U8x2x32_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x4x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U8x4x32_LD_N, args_t...> {
-  using Shape_MN = Shape<_4, _32>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_8>,
@@ -276,7 +416,6 @@ struct Copy_Traits<XE_2D_U8x4x32_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x8x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U8x8x32_LD_N, args_t...> {
-  using Shape_MN = Shape<_8, _32>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_8>,
@@ -295,7 +434,6 @@ struct Copy_Traits<XE_2D_U8x8x32_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x16x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U8x16x32_LD_N, args_t...> {
-  using Shape_MN = Shape<_16, _32>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_8>,
@@ -314,7 +452,6 @@ struct Copy_Traits<XE_2D_U8x16x32_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x32x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U8x32x32_LD_N, args_t...> {
-  using Shape_MN = Shape<_32, _32>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_8>,
@@ -333,7 +470,6 @@ struct Copy_Traits<XE_2D_U8x32x32_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x1x64_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U8x1x64_LD_N, args_t...> {
-  using Shape_MN = Shape<_1, _64>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_8>,
@@ -351,8 +487,7 @@ struct Copy_Traits<XE_2D_U8x1x64_LD_N, args_t...>
 
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x1x64_LD_N::PREFETCH, args_t...>
-    : XE_2D_LD_Unpack<XE_2D_U8x1x64_LD_N, args_t...> {
-  using Shape_MN = Shape<_1, _64>;
+    : XE_2D_LD_Unpack<XE_2D_U8x1x64_LD_N::PREFETCH, args_t...> {
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -369,7 +504,6 @@ struct Copy_Traits<XE_2D_U8x1x64_LD_N::PREFETCH, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x2x64_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U8x2x64_LD_N, args_t...> {
-  using Shape_MN = Shape<_2, _64>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_8>,
@@ -388,8 +522,7 @@ struct Copy_Traits<XE_2D_U8x2x64_LD_N, args_t...>
 
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x2x64_LD_N::PREFETCH, args_t...>
-    : XE_2D_LD_Unpack<XE_2D_U8x2x64_LD_N, args_t...> {
-  using Shape_MN = Shape<_2, _64>;
+    : XE_2D_LD_Unpack<XE_2D_U8x2x64_LD_N::PREFETCH, args_t...> {
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -406,7 +539,6 @@ struct Copy_Traits<XE_2D_U8x2x64_LD_N::PREFETCH, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x4x64_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U8x4x64_LD_N, args_t...> {
-  using Shape_MN = Shape<_4, _64>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_8>,
@@ -424,8 +556,7 @@ struct Copy_Traits<XE_2D_U8x4x64_LD_N, args_t...>
 
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x4x64_LD_N::PREFETCH, args_t...>
-    : XE_2D_LD_Unpack<XE_2D_U8x4x64_LD_N, args_t...> {
-  using Shape_MN = Shape<_4, _64>;
+    : XE_2D_LD_Unpack<XE_2D_U8x4x64_LD_N::PREFETCH, args_t...> {
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -442,7 +573,6 @@ struct Copy_Traits<XE_2D_U8x4x64_LD_N::PREFETCH, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x8x64_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U8x8x64_LD_N, args_t...> {
-  using Shape_MN = Shape<_8, _64>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_8>,
@@ -461,7 +591,6 @@ struct Copy_Traits<XE_2D_U8x8x64_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x8x64_LD_N::PREFETCH, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U8x8x64_LD_N::PREFETCH, args_t...> {
-  using Shape_MN = Shape<_8, _64>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -479,7 +608,6 @@ struct Copy_Traits<XE_2D_U8x8x64_LD_N::PREFETCH, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x16x64_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U8x16x64_LD_N, args_t...> {
-  using Shape_MN = Shape<_16, _64>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_8>,
@@ -497,7 +625,6 @@ struct Copy_Traits<XE_2D_U8x16x64_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x16x64_LD_N::PREFETCH, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U8x16x64_LD_N::PREFETCH, args_t...> {
-  using Shape_MN = Shape<_16, _64>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,Shape <_16,  _2, _16>>,
@@ -512,7 +639,6 @@ struct Copy_Traits<XE_2D_U8x16x64_LD_N::PREFETCH, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x32x64_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U8x32x64_LD_N, args_t...> {
-  using Shape_MN = Shape<_32, _64>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_8>,
@@ -530,7 +656,6 @@ struct Copy_Traits<XE_2D_U8x32x64_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x32x64_LD_N::PREFETCH, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U8x32x64_LD_N::PREFETCH, args_t...> {
-  using Shape_MN = Shape<_32, _64>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,Shape <_16,  _2, _32>>,
@@ -545,7 +670,6 @@ struct Copy_Traits<XE_2D_U8x32x64_LD_N::PREFETCH, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x1x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x1x16_LD_N, args_t...> {
-  using Shape_MN = Shape<_1, _16>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_16>,
@@ -564,7 +688,6 @@ struct Copy_Traits<XE_2D_U16x1x16_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x2x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x2x16_LD_N, args_t...> {
-  using Shape_MN = Shape<_2, _16>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_16>,
@@ -583,7 +706,6 @@ struct Copy_Traits<XE_2D_U16x2x16_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x4x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x4x16_LD_N, args_t...> {
-  using Shape_MN = Shape<_4, _16>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_16>,
@@ -602,7 +724,6 @@ struct Copy_Traits<XE_2D_U16x4x16_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x8x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x8x16_LD_N, args_t...> {
-  using Shape_MN = Shape<_8, _16>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -622,7 +743,6 @@ struct Copy_Traits<XE_2D_U16x8x16_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x8x16_LD_N::PREFETCH, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x8x16_LD_N, args_t...> {
-  using Shape_MN = Shape<_8, _16>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -638,7 +758,6 @@ struct Copy_Traits<XE_2D_U16x8x16_LD_N::PREFETCH, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x16x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x16x16_LD_N, args_t...> {
-  using Shape_MN = Shape<_16, _16>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_16>,
@@ -657,7 +776,6 @@ struct Copy_Traits<XE_2D_U16x16x16_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x16x16_LD_N::PREFETCH, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x16x16_LD_N, args_t...> {
-  using Shape_MN = Shape<_16, _16>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -673,7 +791,6 @@ struct Copy_Traits<XE_2D_U16x16x16_LD_N::PREFETCH, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x32x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x32x16_LD_N, args_t...> {
-  using Shape_MN = Shape<_32, _16>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_16>,
@@ -692,7 +809,6 @@ struct Copy_Traits<XE_2D_U16x32x16_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x32x16_LD_N::PREFETCH, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x32x16_LD_N, args_t...> {
-  using Shape_MN = Shape<_32, _16>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -708,7 +824,6 @@ struct Copy_Traits<XE_2D_U16x32x16_LD_N::PREFETCH, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x1x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x1x32_LD_N, args_t...> {
-  using Shape_MN = Shape<_1, _32>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_16>,
@@ -727,7 +842,6 @@ struct Copy_Traits<XE_2D_U16x1x32_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x1x32_LD_N::PREFETCH, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x1x32_LD_N, args_t...> {
-  using Shape_MN = Shape<_1, _32>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -743,7 +857,6 @@ struct Copy_Traits<XE_2D_U16x1x32_LD_N::PREFETCH, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x2x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x2x32_LD_N, args_t...> {
-  using Shape_MN = Shape<_2, _32>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_16>,
@@ -762,7 +875,6 @@ struct Copy_Traits<XE_2D_U16x2x32_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x2x32_LD_N::PREFETCH, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x2x32_LD_N, args_t...> {
-  using Shape_MN = Shape<_2, _32>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -778,7 +890,6 @@ struct Copy_Traits<XE_2D_U16x2x32_LD_N::PREFETCH, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x4x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x4x32_LD_N, args_t...> {
-  using Shape_MN = Shape<_4, _32>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_16>,
@@ -797,7 +908,6 @@ struct Copy_Traits<XE_2D_U16x4x32_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x4x32_LD_N::PREFETCH, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x4x32_LD_N, args_t...> {
-  using Shape_MN = Shape<_4, _32>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -813,7 +923,6 @@ struct Copy_Traits<XE_2D_U16x4x32_LD_N::PREFETCH, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x8x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x8x32_LD_N, args_t...> {
-  using Shape_MN = Shape<_8, _32>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_16>,
@@ -832,7 +941,6 @@ struct Copy_Traits<XE_2D_U16x8x32_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x8x32_LD_N::PREFETCH, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x8x32_LD_N, args_t...> {
-  using Shape_MN = Shape<_8, _32>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -849,7 +957,6 @@ struct Copy_Traits<XE_2D_U16x8x32_LD_N::PREFETCH, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x16x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x16x32_LD_N, args_t...> {
-  using Shape_MN = Shape<_16, _32>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_16>,
@@ -868,7 +975,6 @@ struct Copy_Traits<XE_2D_U16x16x32_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x16x32_LD_N::PREFETCH, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x16x32_LD_N, args_t...> {
-  using Shape_MN = Shape<_16, _32>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -885,7 +991,6 @@ struct Copy_Traits<XE_2D_U16x16x32_LD_N::PREFETCH, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x32x32_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x32x32_LD_N, args_t...> {
-  using Shape_MN = Shape<_32, _32>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_16>,
@@ -904,7 +1009,6 @@ struct Copy_Traits<XE_2D_U16x32x32_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x32x32_LD_N::PREFETCH, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x32x32_LD_N, args_t...> {
-  using Shape_MN = Shape<_32, _32>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -921,7 +1025,6 @@ struct Copy_Traits<XE_2D_U16x32x32_LD_N::PREFETCH, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_TF32x1x8_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_TF32x1x8_LD_N, args_t...> {
-  using Shape_MN = Shape<_1, _8>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_32>,
@@ -940,7 +1043,6 @@ struct Copy_Traits<XE_2D_TF32x1x8_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_TF32x2x8_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_TF32x2x8_LD_N, args_t...> {
-  using Shape_MN = Shape<_2, _8>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_32>,
@@ -959,7 +1061,6 @@ struct Copy_Traits<XE_2D_TF32x2x8_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_TF32x4x8_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_TF32x4x8_LD_N, args_t...> {
-  using Shape_MN = Shape<_4, _8>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_32>,
@@ -978,7 +1079,6 @@ struct Copy_Traits<XE_2D_TF32x4x8_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_TF32x8x8_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_TF32x8x8_LD_N, args_t...> {
-  using Shape_MN = Shape<_8, _8>;    
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_32>,
@@ -997,7 +1097,6 @@ struct Copy_Traits<XE_2D_TF32x8x8_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_TF32x16x8_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_TF32x16x8_LD_N, args_t...> {
-  using Shape_MN = Shape<_16, _8>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_32>,
@@ -1016,7 +1115,6 @@ struct Copy_Traits<XE_2D_TF32x16x8_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_TF32x32x8_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_TF32x32x8_LD_N, args_t...> {
-  using Shape_MN = Shape<_32, _8>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_32>,
@@ -1035,7 +1133,6 @@ struct Copy_Traits<XE_2D_TF32x32x8_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_TF32x1x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_TF32x1x16_LD_N, args_t...> {
-  using Shape_MN = Shape<_1, _16>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_32>,
@@ -1054,7 +1151,6 @@ struct Copy_Traits<XE_2D_TF32x1x16_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_TF32x2x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_TF32x2x16_LD_N, args_t...> {
-  using Shape_MN = Shape<_2, _16>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_32>,
@@ -1073,7 +1169,6 @@ struct Copy_Traits<XE_2D_TF32x2x16_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_TF32x4x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_TF32x4x16_LD_N, args_t...> {
-  using Shape_MN = Shape<_4, _16>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_32>,
@@ -1092,7 +1187,6 @@ struct Copy_Traits<XE_2D_TF32x4x16_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_TF32x8x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_TF32x8x16_LD_N, args_t...> {
-  using Shape_MN = Shape<_8, _16>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_32>,
@@ -1111,14 +1205,13 @@ struct Copy_Traits<XE_2D_TF32x8x16_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_TF32x16x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_TF32x16x16_LD_N, args_t...> {
-  using Shape_MN = Shape<_16, _16>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_32>,
                            Stride< _0, _1>>;
   // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape <Shape < _8,  _2>,Shape <_32,  _2,  _16>>,
-                           Stride<Stride<_32,_512>,Stride< _1,_256,_1024>>>;
+  using DstLayout = Layout<Shape <_16,Shape <_16,  _32>>,
+                           Stride<_0,Stride< _512, _1>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = DstLayout;
 
@@ -1130,14 +1223,13 @@ struct Copy_Traits<XE_2D_TF32x16x16_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_TF32x32x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_TF32x32x16_LD_N, args_t...> {
-  using Shape_MN = Shape<_32, _16>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_32>,
                            Stride< _0, _1>>;
   // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape <Shape < _8,  _2>,Shape <_32,  _2,  _32>>,
-                           Stride<Stride<_32,_512>,Stride< _1,_256,_1024>>>;
+  using DstLayout = Layout<Shape <_16, Shape <_16, _2, _32>>,
+                           Stride< _0, Stride<_512, Int<512 * 16>, _1>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = DstLayout;
 
@@ -1149,7 +1241,6 @@ struct Copy_Traits<XE_2D_TF32x32x16_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U32x1x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U32x1x16_LD_N, args_t...> {
-  using Shape_MN = Shape<_1, _16>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_32>,
@@ -1168,7 +1259,6 @@ struct Copy_Traits<XE_2D_U32x1x16_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U32x2x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U32x2x16_LD_N, args_t...> {
-  using Shape_MN = Shape<_2, _16>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_32>,
@@ -1187,7 +1277,6 @@ struct Copy_Traits<XE_2D_U32x2x16_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U32x4x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U32x4x16_LD_N, args_t...> {
-  using Shape_MN = Shape<_4, _16>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_32>,
@@ -1206,7 +1295,6 @@ struct Copy_Traits<XE_2D_U32x4x16_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U32x8x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U32x8x16_LD_N, args_t...> {
-  using Shape_MN = Shape<_8, _16>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1225,7 +1313,6 @@ struct Copy_Traits<XE_2D_U32x8x16_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U32x16x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U32x16x16_LD_N, args_t...> {
-  using Shape_MN = Shape<_16, _16>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_32>,
@@ -1244,7 +1331,6 @@ struct Copy_Traits<XE_2D_U32x16x16_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U32x32x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U32x32x16_LD_N, args_t...> {
-  using Shape_MN = Shape<_32, _16>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_32>,
@@ -1263,7 +1349,6 @@ struct Copy_Traits<XE_2D_U32x32x16_LD_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x32x16_LD_V, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U8x32x16_LD_V, args_t...> {
-  using Shape_MN = Shape<_32, _16>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_8>,
@@ -1282,7 +1367,6 @@ struct Copy_Traits<XE_2D_U8x32x16_LD_V, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x32x16_LD_V::PREFETCH, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U8x32x16_LD_V, args_t...> {
-  using Shape_MN = Shape<_32, _16>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1298,7 +1382,6 @@ struct Copy_Traits<XE_2D_U8x32x16_LD_V::PREFETCH, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x32x32_LD_V, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U8x32x32_LD_V, args_t...> {
-  using Shape_MN = Shape<_32, _32>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_8>,
@@ -1317,7 +1400,6 @@ struct Copy_Traits<XE_2D_U8x32x32_LD_V, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x32x64_LD_V, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U8x32x64_LD_V, args_t...> {
-  using Shape_MN = Shape<_32, _64>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_8>,
@@ -1336,7 +1418,6 @@ struct Copy_Traits<XE_2D_U8x32x64_LD_V, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x16x16_LD_V, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x16x16_LD_V, args_t...> {
-  using Shape_MN = Shape<_16, _16>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1356,7 +1437,6 @@ struct Copy_Traits<XE_2D_U16x16x16_LD_V, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x32x16_LD_V, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x32x16_LD_V, args_t...> {
-  using Shape_MN = Shape<_32, _16>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_16>,
@@ -1375,7 +1455,6 @@ struct Copy_Traits<XE_2D_U16x32x16_LD_V, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x32x32_LD_V, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x32x32_LD_V, args_t...> {
-  using Shape_MN = Shape<_32, _32>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1395,7 +1474,6 @@ struct Copy_Traits<XE_2D_U16x32x32_LD_V, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x16x32_LD_V, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x16x32_LD_V, args_t...> {
-  using Shape_MN = Shape<_16, _32>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1415,7 +1493,6 @@ struct Copy_Traits<XE_2D_U16x16x32_LD_V, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x16x8_LD_T, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x16x8_LD_T, args_t...> {
-  using Shape_MN = Shape<_8,_16>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_16>,
@@ -1434,7 +1511,6 @@ struct Copy_Traits<XE_2D_U16x16x8_LD_T, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x16x16_LD_T, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x16x16_LD_T, args_t...> {
-  using Shape_MN = Shape<_16,_16>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_16>,
@@ -1468,7 +1544,6 @@ struct Copy_Traits<XE_2D_U16x16x16_LD_T, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U32x16x2_LD_T, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U32x16x2_LD_T, args_t...> {
-  using Shape_MN = Shape<_2,_16>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1488,7 +1563,6 @@ struct Copy_Traits<XE_2D_U32x16x2_LD_T, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U32x16x4_LD_T, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U32x16x4_LD_T, args_t...> {
-  using Shape_MN = Shape<_4,_16>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1508,7 +1582,6 @@ struct Copy_Traits<XE_2D_U32x16x4_LD_T, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U32x16x8_LD_T, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U32x16x8_LD_T, args_t...> {
-  using Shape_MN = Shape<_8,_16>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1528,7 +1601,6 @@ struct Copy_Traits<XE_2D_U32x16x8_LD_T, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U32x16x8_LD_T::PREFETCH, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U32x16x8_LD_T, args_t...> {
-  using Shape_MN = Shape<_8,_16>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1544,7 +1616,6 @@ struct Copy_Traits<XE_2D_U32x16x8_LD_T::PREFETCH, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U64x8x1_LD_T, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U64x8x1_LD_T, args_t...> {
-  using Shape_MN = Shape<_1,_8>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1564,7 +1635,6 @@ struct Copy_Traits<XE_2D_U64x8x1_LD_T, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U64x8x2_LD_T, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U64x8x2_LD_T, args_t...> {
-  using Shape_MN = Shape<_2,_8>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1584,7 +1654,6 @@ struct Copy_Traits<XE_2D_U64x8x2_LD_T, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U64x8x4_LD_T, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U64x8x4_LD_T, args_t...> {
-  using Shape_MN = Shape<_4,_8>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1604,7 +1673,7 @@ struct Copy_Traits<XE_2D_U64x8x4_LD_T, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x2x32_ST_N, args_t...>
     : XE_2D_ST_Unpack<XE_2D_U8x2x32_ST_N, args_t...> {
-  using Shape_MN = Shape<_2,_32>;
+  using BlockShape = Shape<_2,_32>;
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,Shape <_16,  _2>>,
@@ -1623,7 +1692,6 @@ struct Copy_Traits<XE_2D_U8x2x32_ST_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x1x16_ST_N, args_t...>
     : XE_2D_ST_Unpack<XE_2D_U8x1x16_ST_N, args_t...> {
-  using Shape_MN = Shape<_1, _16>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1643,7 +1711,6 @@ struct Copy_Traits<XE_2D_U8x1x16_ST_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x2x16_ST_N, args_t...>
     : XE_2D_ST_Unpack<XE_2D_U8x2x16_ST_N, args_t...> {
-  using Shape_MN = Shape<_2, _16>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1663,7 +1730,6 @@ struct Copy_Traits<XE_2D_U8x2x16_ST_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x4x16_ST_N, args_t...>
     : XE_2D_ST_Unpack<XE_2D_U8x4x16_ST_N, args_t...> {
-  using Shape_MN = Shape<_4, _16>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1679,7 +1745,6 @@ struct Copy_Traits<XE_2D_U8x4x16_ST_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x8x16_ST_N, args_t...>
     : XE_2D_ST_Unpack<XE_2D_U8x8x16_ST_N, args_t...> {
-  using Shape_MN = Shape<_8, _16>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1700,7 +1765,6 @@ struct Copy_Traits<XE_2D_U8x8x16_ST_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x8x32_ST_N, args_t...>
     : XE_2D_ST_Unpack<XE_2D_U8x8x32_ST_N, args_t...> {
-  using Shape_MN = Shape<_8, _32>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1721,7 +1785,6 @@ struct Copy_Traits<XE_2D_U8x8x32_ST_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x1x16_ST_N, args_t...>
     : XE_2D_ST_Unpack<XE_2D_U16x1x16_ST_N, args_t...> {
-  using Shape_MN = Shape<_1, _16>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1741,7 +1804,7 @@ struct Copy_Traits<XE_2D_U16x1x16_ST_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x2x16_ST_N, args_t...>
     : XE_2D_ST_Unpack<XE_2D_U16x2x16_ST_N, args_t...> {
-  using Shape_MN = Shape<_2, _16>;
+  using BlockShape = Shape<_2, _16>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1761,7 +1824,7 @@ struct Copy_Traits<XE_2D_U16x2x16_ST_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x4x16_ST_N, args_t...>
     : XE_2D_ST_Unpack<XE_2D_U16x4x16_ST_N, args_t...> {
-  using Shape_MN = Shape<_4, _16>;
+  using BlockShape = Shape<_4, _16>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1781,7 +1844,7 @@ struct Copy_Traits<XE_2D_U16x4x16_ST_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U16x8x16_ST_N, args_t...>
     : XE_2D_ST_Unpack<XE_2D_U16x8x16_ST_N, args_t...> {
-  using Shape_MN = Shape<_8, _16>;
+  using BlockShape = Shape<_8, _16>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1801,7 +1864,7 @@ struct Copy_Traits<XE_2D_U16x8x16_ST_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U32x1x16_ST_N, args_t...>
     : XE_2D_ST_Unpack<XE_2D_U32x1x16_ST_N, args_t...> {
-  using Shape_MN = Shape<_1, _16>;
+  using BlockShape = Shape<_1, _16>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1821,7 +1884,7 @@ struct Copy_Traits<XE_2D_U32x1x16_ST_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U32x2x16_ST_N, args_t...>
     : XE_2D_ST_Unpack<XE_2D_U32x2x16_ST_N, args_t...> {
-  using Shape_MN = Shape<_2, _16>;
+  using BlockShape = Shape<_2, _16>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1841,7 +1904,6 @@ struct Copy_Traits<XE_2D_U32x2x16_ST_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U32x4x16_ST_N, args_t...>
     : XE_2D_ST_Unpack<XE_2D_U32x4x16_ST_N, args_t...> {
-  using Shape_MN = Shape<_4, _16>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1861,7 +1923,6 @@ struct Copy_Traits<XE_2D_U32x4x16_ST_N, args_t...>
 template <class... args_t>
 struct Copy_Traits<XE_2D_U32x8x16_ST_N, args_t...>
     : XE_2D_ST_Unpack<XE_2D_U32x8x16_ST_N, args_t...> {
-  using Shape_MN = Shape<_8, _16>;
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -1877,14 +1938,6 @@ struct Copy_Traits<XE_2D_U32x8x16_ST_N, args_t...>
   Copy_Traits(ArgTs... args)
       : XE_2D_ST_Unpack<XE_2D_U32x8x16_ST_N, args_t...>(args...) {}
 };
-
-template <class Copy, class GEngine, class GLayout>
-auto make_xe_2d_copy(Tensor<GEngine, GLayout> gtensor) {
-  using GTensor = Tensor<GEngine, GLayout>;
-  using Traits = Copy_Traits<Copy, GTensor>;
-  // Traits traits {gtensor};
-  return Copy_Atom<Traits, typename GEngine::value_type>{gtensor};
-}
 
 template<class S, class D>
 struct Copy_Traits<XE_ATOMIC<S, D>> {
@@ -1971,6 +2024,7 @@ struct Copy_Traits<XE_1D_STORE_GLOBAL<S, D>> {
 
 namespace detail
 {
+  //TODO:: THIS SHOULD GET DEPRECATED
   template<class PrefetchTileSize, class dtype>
   auto prefetch_selector(void* ptr = nullptr, int32_t width = 0, int32_t height = 0, int32_t pitch = 0) {
     if constexpr (get<0>(PrefetchTileSize{}) == 1) {
@@ -2002,7 +2056,6 @@ namespace detail
                                            Layout<Shape<_2, _2, _8>>{});
     }
     else if constexpr (get<0>(PrefetchTileSize{}) == 16) {
-      // static_assert(false);
       using prefetch_trait = Copy_Traits<XE_2D_U8x16x64_LD_N>;
       using prefetch_atom = Copy_Atom<prefetch_trait, dtype>;
       return make_tiled_copy(prefetch_atom{}.with(static_cast<dtype const*>(ptr), width, height, pitch),
@@ -2020,6 +2073,217 @@ namespace detail
       static_assert(dependent_false<PrefetchTileSize> && "Invalid PrefetchTileSize[0]");
     }
   }
+ 
+template<typename PrefetchShape, class Stride, class dtype, int subgroupsize, class Tensor >
+  CUTE_HOST_DEVICE  auto make_prefetch(Tensor const& tensor) {
+      using prefetch_trait = Copy_Traits<PrefetchShape, Stride>;
+      using prefetch_atom = Copy_Atom<prefetch_trait, dtype>;
+      return make_xe_2d_copy(prefetch_atom{}.with(tensor),
+                                      Layout<Shape<_1, Int<16>>>{});
+    }
+// Define macros to map types to their corresponding sizes
+#define TYPE_BITS_float(row) XE_2D_U32##x##row##x##16_LD_N
+#define TYPE_BITS_bfloat16_t(row) XE_2D_U16##x##row##x##32_LD_N
+#define TYPE_BITS_int8_t(row) XE_2D_U8##x##row##x##64_LD_N
+
+#define SELECT_BITS(type, row) TYPE_BITS_##type(row)
+// Template to dynamically construct and return the type
+template <typename T, int row>
+struct XePrefetchConstructor {
+       static_assert( "Invalid PrefetchTileSize and type"); 
+};
+
+#define BUILD_XE_NAME(row)\
+template <>\
+struct XePrefetchConstructor<float, row> {\
+  using type_t = TYPE_BITS_float(row);\
+};\
+template <>\
+struct XePrefetchConstructor<bfloat16_t, row> {\
+  using type_t = TYPE_BITS_bfloat16_t(row);\
+};\
+template <>\
+struct XePrefetchConstructor<half_t, row> {\
+  using type_t = TYPE_BITS_bfloat16_t(row);\
+};\
+template <>\
+struct XePrefetchConstructor<int8_t, row> {\
+  using type_t = TYPE_BITS_int8_t(row);\
+};\
+
+BUILD_XE_NAME(1)
+BUILD_XE_NAME(2)
+BUILD_XE_NAME(4)
+BUILD_XE_NAME(8)
+BUILD_XE_NAME(16)
+BUILD_XE_NAME(32)
+
+#undef TYPE_BITS_float
+#undef TYPE_BITS_bfloat16_t
+#undef TYPE_BITS_int8_t
+#undef BUILD_XE_NAME
+
+   template<class PrefetchTileSize, class dtype, class Stride, int SubgroupSize, class Tensor>
+   CUTE_HOST_DEVICE auto prefetch_selector(Tensor const& tensor) {
+    if constexpr (get<0>(PrefetchTileSize{}) == 1)
+      return make_prefetch<typename XePrefetchConstructor<dtype, 1>::type_t, Stride, dtype, SubgroupSize>(tensor);
+    else if constexpr (get<0>(PrefetchTileSize{}) == 2)
+      return make_prefetch<typename XePrefetchConstructor<dtype, 2>::type_t, Stride, dtype, SubgroupSize>(tensor);
+    else if constexpr (get<0>(PrefetchTileSize{}) == 4)
+      return make_prefetch<typename XePrefetchConstructor<dtype, 4>::type_t, Stride, dtype, SubgroupSize>(tensor);
+    else if constexpr (get<0>(PrefetchTileSize{}) == 8)
+      return make_prefetch<typename XePrefetchConstructor<dtype, 8>::type_t, Stride, dtype, SubgroupSize>(tensor);
+    else if constexpr (get<0>(PrefetchTileSize{}) == 16)
+      return make_prefetch<typename XePrefetchConstructor<dtype, 16>::type_t, Stride, dtype, SubgroupSize>(tensor);
+    else if constexpr (get<0>(PrefetchTileSize{}) == 32)
+      return make_prefetch<typename XePrefetchConstructor<dtype, 32>::type_t, Stride, dtype, SubgroupSize>(tensor); 
+    else
+      static_assert(dependent_false<PrefetchTileSize> && "Invalid PrefetchTileSize[0]");
+  }
 } // end namespace detail
+
+template <class TiledCopy, class ThrIdx>
+class Xe2DThrCopy : ThrCopy<TiledCopy, ThrIdx> {
+
+public:
+
+  CUTE_HOST_DEVICE
+  Xe2DThrCopy(ThrIdx const& thr_idx) : ThrCopy<TiledCopy, ThrIdx> (thr_idx) {}
+
+  template <class DTensor>
+  CUTE_HOST_DEVICE
+  auto
+  retile_D(DTensor&& dtensor) {
+    if constexpr (!TiledCopy::is_convention_MN) {
+      return retile_D_nkl(dtensor);
+    } else {
+      return retile_D_mkl(dtensor);
+    }
+  }
+
+  template <class MMA, class MMATensor>
+  CUTE_HOST_DEVICE
+  auto
+  retile_MMA(MMA const&, MMATensor&& mma_tensor) {
+    if constexpr (TiledCopy::is_convention_MN) {
+      static constexpr auto m = decltype(size<1>(mma_tensor.shape()))::value;
+      static constexpr auto k = decltype(size<2>(mma_tensor.shape()))::value;
+      static constexpr auto m_step = size<0>(typename TiledCopy::BlockShape{})
+                                        / size<0>(typename MMA::Shape_MNK{});
+      static constexpr auto k_step = size<1>(typename TiledCopy::BlockShape{})
+                                        / size<2>(typename MMA::Shape_MNK{});
+
+      auto retiled_tensor = make_tensor(mma_tensor.data(),
+                                        make_shape(size<0>(mma_tensor.shape()),
+                                                   Int<m_step>{},
+                                                   Int<k_step>{},
+                                                   Int<m / m_step>{},
+                                                   Int<k / k_step>{}));
+      return make_tensor(mma_tensor.data(),group<2, 4>(group<1, 3>(select<0, 1, 3, 2, 4>(retiled_tensor.layout()))));
+    } else {
+      static constexpr auto k = decltype(size<2>(mma_tensor.shape()))::value;
+      static constexpr auto k_step = size<0>(typename TiledCopy::BlockShape{})
+                                      / size<2>(typename MMA::Shape_MNK{});
+
+      auto retiled_tensor = make_tensor(mma_tensor.data(),
+                                        make_shape(size<0>(mma_tensor.shape()),
+                                                   Int<k_step>{},
+                                                   size<1>(mma_tensor.shape()),
+                                                   Int<k / k_step>{}));
+      return make_tensor(mma_tensor.data(),group<2, 4>(select<0, 2, 1, 3>(retiled_tensor.layout())));
+    }
+  }
+
+private:
+
+  template <class DTensor>
+  CUTE_HOST_DEVICE static
+  auto
+  retile_D_mkl(DTensor&& dtensor) {
+    auto tmp = ThrCopy<TiledCopy, ThrIdx>::retile_D(dtensor);
+    return make_tensor(static_cast<decltype(tmp) &&>(tmp).data(),
+                           tmp.shape());
+  }
+
+  template <class DTensor>
+  CUTE_HOST_DEVICE static
+  auto
+  retile_D_nkl(DTensor&& dtensor) {
+    auto b_tensor = make_tensor(dtensor.data(),
+                               make_shape(size<0>(dtensor.shape()),
+                                         size<2>(dtensor.shape()),
+                                         size<1>(dtensor.shape())));
+    auto tmp = ThrCopy<TiledCopy, ThrIdx>::retile_D(b_tensor);
+    return make_tensor(static_cast<decltype(tmp) &&>(tmp).data(),
+                       make_shape(size<0>(tmp.shape()),
+                                  size<2>(tmp.shape()),
+                                  size<1>(tmp.shape())));
+  }
+};
+
+template <class Copy_Atom,
+          class LayoutCopy_TV,  // (tid,vid) -> coord   [Need not be 2D...]
+          class ShapeTiler_MN>  // coord space
+struct Xe2DTiledCopy : TiledCopy<Copy_Atom, LayoutCopy_TV, ShapeTiler_MN>{
+
+  template <class ThrIdx,
+            __CUTE_REQUIRES(is_integral<ThrIdx>::value)>
+  CUTE_HOST_DEVICE
+  auto
+  get_slice(ThrIdx const& thr_idx) const
+  {
+    return Xe2DThrCopy<Xe2DTiledCopy, ThrIdx>(thr_idx);
+  }
+};
+
+template <class... Args,
+          class ThrLayout,
+          class ValLayout = typename Copy_Atom<Args...>::Value_Layout>
+CUTE_HOST_DEVICE
+auto
+make_xe_2d_copy(Copy_Atom<Args...> const& copy_atom,
+                ThrLayout          const& thr_layout = {},     // (m,n) -> thr_idx
+                ValLayout          const& val_layout = {})     // (m,n) -> val_idx
+{
+  // Take the raked_products to compute the Layout_MN
+  // (M,N) -> (thr_idx, val_idx)
+  auto layout_mn = raked_product(thr_layout, val_layout);
+  // (thr_idx, val_idx) -> (M,N)
+  auto layout_tv = right_inverse(layout_mn).with_shape(make_shape(size(thr_layout), size(val_layout)));
+  // Tiler for extracting relevant elements
+  // (M,N) -> tensor coord
+  auto tiler = product_each(shape(layout_mn));
+
+#if 0
+  print("thr_layout: "); print(thr_layout); print("\n");
+  print("val_layout: "); print(val_layout); print("\n");
+  print("layout_mn : "); print(layout_mn);  print("\n");
+  print("layout_tv : "); print(layout_tv);  print("\n");
+  print("tiler     : "); print(tiler);      print("\n");
+#endif
+
+  return Xe2DTiledCopy<Copy_Atom<Args...>, decltype(layout_tv), decltype(tiler)>{copy_atom};
+}
+
+// The number of threads involved in a Xe2DTiledCopy
+template <class... Args>
+CUTE_HOST_DEVICE constexpr
+auto
+size(Xe2DTiledCopy<Args...> const&)
+{
+  return typename Xe2DTiledCopy<Args...>::TiledNumThr{};
+}
+
+template <class CopyAtom, class TV, class Tiler,
+          class SrcEngine, class SrcLayout,
+          class DstEngine, class DstLayout>
+CUTE_HOST_DEVICE
+void
+copy(Xe2DTiledCopy<CopyAtom, TV, Tiler> const& tiled_copy,
+     Tensor<SrcEngine, SrcLayout>   const& src,
+     Tensor<DstEngine, DstLayout>        & dst)
+{
+  return copy(static_cast<CopyAtom const&>(tiled_copy), src, dst);
+}
 
 } // end namespace cute

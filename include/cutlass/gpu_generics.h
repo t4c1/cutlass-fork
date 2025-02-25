@@ -42,6 +42,8 @@
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace cutlass {
 #ifdef SYCL_INTEL_TARGET
 static const int NumThreadsPerWarp = 16;
 #else
@@ -53,6 +55,8 @@ static const int NumThreadsPerHalfWarp = NumThreadsPerWarp / 2;
 static const int NumThreadsPerQuad = 4;
 static const int NumThreadsPerQuadPair = NumThreadsPerQuad * 2;
 static constexpr int MaxNumThreadsPerBlock = 1024;
+
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -258,7 +262,7 @@ T shfl_up_sync(
   unsigned int const mask,
   T const var,
   int const delta,
-  int const width = NumThreadsPerWarp) {
+  int const width = cutlass::NumThreadsPerWarp) {
 #if defined(__CUDA_ARCH__)
   return __shfl_up_sync(mask, var, delta, width);
 #elif defined(__SYCL_DEVICE_ONLY__)
@@ -274,7 +278,7 @@ T shfl_down_sync(
   unsigned int const mask,
   T const var,
   int const delta,
-  int const width = NumThreadsPerWarp) {
+  int const width = cutlass::NumThreadsPerWarp) {
 #if defined(__CUDA_ARCH__)
   return __shfl_down_sync(mask, var, delta, width);
 #elif defined(__SYCL_DEVICE_ONLY__)
@@ -290,7 +294,7 @@ T shfl_sync(
   unsigned int const mask,
   T const var,
   int const delta,
-  int const width = NumThreadsPerWarp) {
+  int const width = cutlass::NumThreadsPerWarp) {
 #if defined(__CUDA_ARCH__)
   return __shfl_sync(mask, var, delta, width);
 #elif defined(__SYCL_DEVICE_ONLY__)
@@ -308,7 +312,7 @@ T shfl_xor_sync(
   unsigned int const mask,
   T const var,
   int const laneMask,
-  int const width = NumThreadsPerWarp) {
+  int const width = cutlass::NumThreadsPerWarp) {
 #if defined(__CUDA_ARCH__)
   return __shfl_xor_sync(mask, var, laneMask, width);
 #elif defined(__SYCL_DEVICE_ONLY__)

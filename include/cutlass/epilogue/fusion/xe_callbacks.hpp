@@ -47,6 +47,7 @@
 #include "cutlass/epilogue/fusion/sm90_visitor_load_tma_warpspecialized.hpp"
 #include "cutlass/epilogue/fusion/sm90_visitor_store_tma_warpspecialized.hpp"
 #include "cutlass/epilogue/fusion/sm90_visitor_compute_tma_warpspecialized.hpp"
+#include "cutlass/epilogue/fusion/xe_vistor_softmax.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -168,7 +169,76 @@ struct FusionCallbacks<
   using Impl::Impl;
 };
 
-/////////////////////////////////////////////////////////////////////////////////////////////////
+// D = softmax(alpha * acc + beta * C)
+template<
+  // int FragmentSize,
+  class CtaTileShapeMNK,
+  class EpilogueTile,
+  class ElementOutput,
+  class ElementCompute,
+  class CopyOpR2G,
+  class ElementSource = ElementOutput,
+  class ElementScalar = ElementCompute,
+  FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
+>
+using XeLinCombSoftmaxRow =
+  Sm90EVT<XeSoftmaxRowReduction<CtaTileShapeMNK, EpilogueTile, ElementOutput, ElementCompute, CopyOpR2G, RoundStyle>, // softmax(beta * C + (alpha * acc))
+    Sm90LinearCombination<ElementCompute, ElementCompute, ElementSource, ElementScalar, RoundStyle> // beta * C + (alpha * acc)
+  >;
+
+template <
+  // int FragmentSize,
+  class ElementOutput_,
+  class ElementCompute_,
+  class ElementSource_,
+  class ElementScalar_,
+  class CopyOpR2G_,
+  FloatRoundStyle RoundStyle,
+  class CtaTileShapeMNK,
+  class EpilogueTile
+>
+struct FusionCallbacks<
+    epilogue::IntelPVCEpilogue,
+    fusion::LinCombSoftmaxRow<ElementOutput_, ElementCompute_, CopyOpR2G_, ElementSource_, ElementScalar_, RoundStyle>,
+    CtaTileShapeMNK,
+    EpilogueTile
+> : XeLinCombSoftmaxRow<CtaTileShapeMNK, EpilogueTile, ElementOutput_, ElementCompute_, CopyOpR2G_, ElementSource_, ElementScalar_, RoundStyle> {
+
+  using ElementOutput = ElementOutput_;
+  using ElementCompute = ElementCompute_;
+  using ElementSource = ElementSource_;
+  using ElementScalar = ElementScalar_;
+  using Impl = XeLinCombSoftmaxRow<CtaTileShapeMNK, EpilogueTile, typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type, ElementCompute, CopyOpR2G_, ElementSource, ElementScalar, RoundStyle>;
+  using Operation = fusion::LinCombSoftmaxRow<ElementOutput_, ElementCompute, CopyOpR2G_, ElementSource, ElementScalar, RoundStyle>;
+
+  struct Arguments {
+    ElementScalar alpha = ElementScalar(1);
+    ElementScalar beta = ElementScalar(0);
+    ElementScalar const* alpha_ptr = nullptr;
+    ElementScalar const* beta_ptr = nullptr;
+    ElementOutput* output_ptr = nullptr;
+
+    operator typename Impl::Arguments() const {
+      return
+        {    // unary op: activation(beta * C + (alpha * acc))
+          {    // ternary op : beta * C + (alpha * acc)
+            {{beta}, {beta_ptr}}, // leaf args : beta
+            {},                   // leaf args : C
+            {                     // binary op : alpha * acc
+              {{alpha}, {alpha_ptr}}, // leaf args : alpha
+              {},                     // leaf args : acc
+              {}                  // binary args : multiplies
+            },                    // end binary op
+            {} // ternary args : multiply_add
+          },   // end ternary op
+          {output_ptr} // unary args: activation
+        };   // end unary op
+    }
+  };
+
+  // Ctor inheritance
+  using Impl::Impl;
+};
 
 template<
   class StrideAux,
@@ -275,6 +345,72 @@ struct FusionCallbacks<
 };
 
 template <
+  class ElementOutput_,
+  class ElementCompute_,
+  class ElementBias_,
+  class ElementSource_,
+  class ElementScalar_,
+  int AlignmentBias_,
+  FloatRoundStyle RoundStyle_,
+  class CtaTileShapeMNK_,
+  class EpilogueTile_
+>
+struct FusionCallbacks<
+    epilogue::IntelPVCEpilogue,
+    fusion::LinCombPerRowBias<ElementOutput_, ElementCompute_, ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, RoundStyle_>,
+    CtaTileShapeMNK_,
+    EpilogueTile_
+> : Sm90LinCombPerRowBias<CtaTileShapeMNK_, ElementOutput_, ElementCompute_, ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, RoundStyle_> {
+
+  using Impl = Sm90LinCombPerRowBias<
+      CtaTileShapeMNK_,
+      typename cutlass::detail::get_unpacked_element_type<ElementOutput_>::type,
+      ElementCompute_, ElementBias_, ElementSource_, ElementScalar_,
+      AlignmentBias_, RoundStyle_>;
+  using ElementOutput = ElementOutput_;
+  using ElementCompute = ElementCompute_;
+  using ElementBias = ElementBias_;
+  using ElementSource = ElementSource_;
+  using ElementScalar = ElementScalar_;
+  static constexpr int AlignmentBias = AlignmentBias_;
+  using Operation = fusion::LinCombPerRowBias<ElementOutput_, ElementCompute_, ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, RoundStyle_>;
+
+  struct Arguments {
+    ElementScalar_ alpha = ElementScalar_(1);
+    ElementScalar_ beta = ElementScalar_(0);
+    ElementScalar_ const* alpha_ptr = nullptr;
+    ElementScalar_ const* beta_ptr = nullptr;
+
+    using StrideAlpha = Stride<_0,_0,int64_t>;
+    using StrideBeta  = Stride<_0,_0,int64_t>;
+    StrideAlpha dAlpha = {_0{}, _0{}, 0};
+    StrideBeta  dBeta  = {_0{}, _0{}, 0};
+
+    using StrideBias = Stride<_1, _0, int64_t>;
+    ElementBias const* bias_ptr = nullptr;
+    StrideBias dBias = {};
+
+    operator typename Impl::Arguments() const {
+      return
+        {     // ternary op : beta * C + (alpha * acc + bias)
+          {{beta}, {beta_ptr}, {dBeta}}, // leaf args : beta
+          {},                   // leaf args : C
+          {                     // ternary op : alpha * acc + bias
+            {{alpha}, {alpha_ptr}, {dAlpha}}, // leaf args : alpha
+            {},                     // leaf args : acc
+            {bias_ptr, ElementBias(0), dBias}, // leaf args : bias
+            {}                  // ternary args : multiply_add
+          },                    // end ternary op
+          {} // ternary args : multiply_add
+        };   // end ternary op
+    }
+  };
+
+  // Ctor inheritance
+  using Impl::Impl;
+};
+
+template <
   int TopK,
   class ElementOutput_,
   class ElementCompute_,
@@ -285,10 +421,10 @@ template <
   class EpilogueTile
 >
 struct FusionCallbacks<
-    epilogue::IntelPVCEpilogue,
-    fusion::LinCombTopKSoftmaxCol<TopK, ElementOutput_, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle>,
-    CtaTileShapeMNK,
-    EpilogueTile
+  epilogue::IntelPVCEpilogue,
+  fusion::LinCombTopKSoftmaxCol<TopK, ElementOutput_, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle>,
+  CtaTileShapeMNK,
+  EpilogueTile
 > : Sm90LinCombTopKSoftmaxCol<TopK, epilogue::IntelPVCEpilogue::FragmentSize, CtaTileShapeMNK, EpilogueTile, ElementOutput_, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle> {
 
   using ElementOutput = ElementOutput_;
