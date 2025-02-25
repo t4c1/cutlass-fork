@@ -537,7 +537,7 @@ struct Copy_Traits<XE_2D_U8x1x64_LD_N, args_t...>
 
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x1x64_LD_N::PREFETCH, args_t...>
-    : XE_2D_LD_Unpack<XE_2D_U8x1x64_LD_N, args_t...> {
+    : XE_2D_LD_Unpack<XE_2D_U8x1x64_LD_N::PREFETCH, args_t...> {
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -572,7 +572,7 @@ struct Copy_Traits<XE_2D_U8x2x64_LD_N, args_t...>
 
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x2x64_LD_N::PREFETCH, args_t...>
-    : XE_2D_LD_Unpack<XE_2D_U8x2x64_LD_N, args_t...> {
+    : XE_2D_LD_Unpack<XE_2D_U8x2x64_LD_N::PREFETCH, args_t...> {
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -606,7 +606,7 @@ struct Copy_Traits<XE_2D_U8x4x64_LD_N, args_t...>
 
 template <class... args_t>
 struct Copy_Traits<XE_2D_U8x4x64_LD_N::PREFETCH, args_t...>
-    : XE_2D_LD_Unpack<XE_2D_U8x4x64_LD_N, args_t...> {
+    : XE_2D_LD_Unpack<XE_2D_U8x4x64_LD_N::PREFETCH, args_t...> {
   // Logical thread id to thread idx
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
@@ -2106,7 +2106,6 @@ namespace detail
                                            Layout<Shape<_2, _2, _8>>{});
     }
     else if constexpr (get<0>(PrefetchTileSize{}) == 16) {
-      // static_assert(false);
       using prefetch_trait = Copy_Traits<XE_2D_U8x16x64_LD_N>;
       using prefetch_atom = Copy_Atom<prefetch_trait, dtype>;
       return make_tiled_copy(prefetch_atom{}.with(static_cast<dtype const*>(ptr), width, height, pitch),
@@ -2157,6 +2156,10 @@ struct XePrefetchConstructor<bfloat16_t, row> {\
   using type_t = TYPE_BITS_bfloat16_t(row);\
 };\
 template <>\
+struct XePrefetchConstructor<half_t, row> {\
+  using type_t = TYPE_BITS_bfloat16_t(row);\
+};\
+template <>\
 struct XePrefetchConstructor<int8_t, row> {\
   using type_t = TYPE_BITS_int8_t(row);\
 };\
@@ -2191,7 +2194,5 @@ BUILD_XE_NAME(32)
       static_assert(dependent_false<PrefetchTileSize> && "Invalid PrefetchTileSize[0]");
   }
 } // end namespace detail
-
-
 
 } // end namespace cute
