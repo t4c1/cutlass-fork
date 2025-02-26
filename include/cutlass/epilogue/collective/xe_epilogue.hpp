@@ -190,16 +190,18 @@ public:
 
     XE_Copy_C xe_load_c = {};
     if constexpr (is_source_supported) {
-      xe_load_c = make_tiled_copy(Copy_Atom<Trait_C, ElementC>{}.with(
-                                  args.ptr_C, M, N),
+      auto mC = make_tensor(make_gmem_ptr(static_cast<ElementC const*>(args.ptr_C)),
+                            make_layout(make_shape(M, N, L), args.dC));
+      xe_load_c = make_tiled_copy(Copy_Atom<Trait_C, ElementC>{}.with(mC),
                                   Layout<CopyThreadShape>{},
                                   make_layout(shape_div(typename Trait_C::BlockShape{}, CopyThreadShape{})));
     }
 
     XE_Copy_D xe_store_d = {};
     if constexpr (is_destination_supported) {
-      xe_store_d = make_tiled_copy(Copy_Atom<Trait_D, ElementD>{}.with(
-                                   args.ptr_D, M, N),
+      auto mD = make_tensor(make_gmem_ptr(static_cast<ElementD const*>(args.ptr_D)),
+                            make_layout(make_shape(M, N, L), args.dD));
+      xe_store_d = make_tiled_copy(Copy_Atom<Trait_D, ElementD>{}.with(mD),
                                    Layout<CopyThreadShape>{},
                                    make_layout(shape_div(typename Trait_D::BlockShape{}, CopyThreadShape{})));
     }
