@@ -217,12 +217,14 @@ struct CollectiveMmaAttention<MainloopIntelPVC<Stages>, TileShape_, ElementQ_, S
     // Instantiate the MMA object
     TiledMma tiled_mma;
     // To make all threads in a warp have the same global tensors pass in the index of thread 0 in each warp
-    auto thread_mma = tiled_mma.get_slice(thread_idx & ~15);
+    auto sg = syclcompat::get_nd_item<1>().get_sub_group();
+    auto first_thread_in_sg_idx = sg.get_group_linear_id() * DispatchPolicy::SubgroupSize;
+    auto thread_mma = tiled_mma.get_slice(first_thread_in_sg_idx);
     // For partitioning tensor B we also want all subgroups in a row to load the same data.
     // We have the same TiledMMA for both MMAs in flash attention, but the first one should have different strides.
     // For now we have this hacky workaround
     // TODO(Codeplay): we should use 2 TiledMMAs instead of this hack
-    auto thread_mma_b = tiled_mma.get_slice(thread_idx & ~15 & ~16);
+    auto thread_mma_b = tiled_mma.get_slice(0);
 
     // Partition
     Tensor tCgA = thread_mma.partition_A(gA);
