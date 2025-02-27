@@ -341,9 +341,9 @@ TEST(PVC_CuTE_Xe, block_2d_16bits_n_v2) {
   copy_op<uint16_t, XE_2D_U16x8x32_LD_N, XE_2D_U16x2x16_ST_N, 8, 32>{}();
   copy_op<uint16_t, XE_2D_U16x16x32_LD_N, XE_2D_U16x2x16_ST_N, 16, 32>{}();
   copy_op<uint16_t, XE_2D_U16x32x32_LD_N, XE_2D_U16x2x16_ST_N, 32, 32>{}();
-  }
-  
-  TEST(PVC_CuTe_Xe, block_2d_16bits_vnni) {
+}
+
+TEST(PVC_CuTe_Xe, block_2d_16bits_vnni) {
   copy_op<uint16_t, XE_2D_U16x16x16_LD_V, XE_2D_U16x8x16_ST_N, 16, 16>{}();
   copy_op<uint16_t, XE_2D_U16x32x16_LD_V, XE_2D_U16x8x16_ST_N, 32, 16>{}();
 }
