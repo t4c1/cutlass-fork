@@ -303,13 +303,13 @@ struct CollectiveMma<
     if (cutlass::thread(LOG_THREAD, LOG_GROUP)) {
         print("======================= A: \n");
         print("  gA : "); print(gA); print("\n");
-        print("copy_tCrA : "); print(copy_tCrA); print("\n");
-        print("  mma_tCrA : "); print(mma_tCrA); print("\n");
+        print("tCgA : "); print(tCgA); print("\n");
+        print("tAgA : "); print(tAgA); print("\n");
 
         print("=====================  B :\n");
         print("  gB : "); print(gB); print("\n");
-        print("copy_tCrB : "); print(copy_tCrB); print("\n");
-        print("  mma_tCrB : "); print(mma_tCrB); print("\n");
+        print("tCgB : "); print(tCgB); print("\n");
+        print("tBgB : "); print(tBgB); print("\n");
 
         print("=====================  Config: \n");
         print("  threads per workgroup : "); print(MaxThreadsPerBlock); print("\n");
