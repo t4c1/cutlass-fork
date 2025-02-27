@@ -466,9 +466,9 @@ public:
     Tensor gAux = local_tile(mAux_mnl, select<0,1>(EpilogueTile{}), make_coord(sg_m_coord,sg_n_coord,l_offset));
     Tensor tCgAux = args.tiled_copy.get_thread_slice(args.thread_idx).partition_D(gAux);
 
-    return ConsumerStoreCallbacks<decltype(res),decltype(rw_coord)>(
+    return ConsumerStoreCallbacks<decltype(res),decltype(tCgAux)>(
       cute::move(res), 
-      cute::move(rw_coord),
+      cute::move(tCgAux),
       params);
   }
 
