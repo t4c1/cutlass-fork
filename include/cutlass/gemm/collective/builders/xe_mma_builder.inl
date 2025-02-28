@@ -92,14 +92,16 @@ struct CollectiveBuilder<
       using Atom_N = decltype(get<1>(typename MMA_Traits<XE_8x16x16_F32BF16BF16F32_TT>::Shape_MNK{}));
       using SGs_M = _8;
       using SGs_N = _4;
-      using Iters_M = Tile_M / Atom_M / SGs_M;
-      using Iters_N = Tile_N / Atom_N / SGs_N;
+      using Iters_M = decltype(Tile_M{} / Atom_M{} / SGs_M{});
+      using Iters_N = decltype(Tile_N{} / Atom_N{} / SGs_N{});
+      using Stride_M = decltype(Iters_M{} * Atom_M{});
+      using Stride_N = decltype(Iters_N{} * Atom_N{});
 
       using TiledMma =
           TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
                    Layout<Shape<SGs_M, SGs_N, _1>, Stride<SGs_N, _1, _0>>,
-                   Tile<Layout<Shape<Atom_M, SGs_M, Iters_M>, Stride<_1, Iters_M * Atom_M, Atom_M>>,
-                        Layout<Shape<Atom_N, SGs_N, Iters_N>, Stride<_1, Iters_N * Atom_N, Atom_N>>, Tile_K>>;
+                   Tile<Layout<Shape<Atom_M, SGs_M, Iters_M>, Stride<_1, Stride_M, Atom_M>>,
+                        Layout<Shape<Atom_N, SGs_N, Iters_N>, Stride<_1, Stride_N, Atom_N>>, Tile_K>>;
       
       static constexpr int PipelineStages = 3;
       using DispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages>;
