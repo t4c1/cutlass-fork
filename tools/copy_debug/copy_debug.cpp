@@ -70,7 +70,7 @@ void copy_kernel(TensorS S) {
 
   static_assert(actual_fragment_size::value >= Atom_load::NumValDst, "fragment is too small to hold all results!");
   Tensor fragment_copy_view = make_tensor(fragment.data(), make_shape(C<Atom_load::NumValDst>{},_1{},_1{}));
-  auto blk_load_S = tiled_copy_load.get_pvc_tensor(make_coord(0, 0, 0),make_shape(_1{},_1{},_1{}));
+  auto blk_load_S = tiled_copy_load.get_pvc_tensor(S.shape());
   copy(tiled_copy_load, blk_load_S, fragment_copy_view);
 
   if(thread(0)){
@@ -107,7 +107,7 @@ template <class CopyInstruction, class dtype, class fragment_size = void>
 void copy(int global_M, int global_N) {
   using namespace cute;
 
-  auto tensor_shape = make_shape(global_M, global_N);
+  auto tensor_shape = make_shape(global_M, global_N, 1);
   int tensor_size = size(tensor_shape);
   cutlass::DeviceAllocation<dtype> src(tensor_size);
 
