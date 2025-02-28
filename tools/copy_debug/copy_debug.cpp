@@ -113,7 +113,7 @@ void copy(int global_M, int global_N) {
 
   Tensor tensor_S = make_tensor(make_gmem_ptr(src.get()), make_layout(tensor_shape, LayoutLeft{}));
 
-  auto gridDim = syclcompat::dim3(SUBGROUP_SIZE);
+  auto gridDim = syclcompat::dim3(1);
   auto blockDim = syclcompat::dim3(SUBGROUP_SIZE);
   launch<copy_kernel<CopyInstruction, decltype(tensor_S), fragment_size>>(
       launch_policy{gridDim, blockDim,
