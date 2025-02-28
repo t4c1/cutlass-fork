@@ -207,6 +207,7 @@ struct CollectiveMma<MainloopIntelPVC<Stages>, TileShape_, ElementA_, StrideA_, 
 
     // Instantiate the MMA object and get thread slice
     TiledMma tiled_mma;
+    // TODO(Codeplay): see if we can make this nicer
     // To make all work items in a subgroup have the same global tensors pass in the index of work item 0 in each subgroup
     auto sg = syclcompat::get_nd_item<1>().get_sub_group();
     auto first_thread_in_sg_idx = sg.get_group_linear_id() * DispatchPolicy::SubgroupSize;
@@ -232,13 +233,13 @@ struct CollectiveMma<MainloopIntelPVC<Stages>, TileShape_, ElementA_, StrideA_, 
     if (cutlass::thread(LOG_THREAD, LOG_GROUP)) {
         print("======================= A: \n");
         print("  gA : "); print(gA); print("\n");
-        print("copy_tCrA : "); print(copy_tCrA); print("\n");
-        print("  mma_tCrA : "); print(mma_tCrA); print("\n");
+        print("tCgA : "); print(tCgA); print("\n");
+        print("tAgA : "); print(tAgA); print("\n");
 
         print("=====================  B :\n");
         print("  gB : "); print(gB); print("\n");
-        print("copy_tCrB : "); print(copy_tCrB); print("\n");
-        print("  mma_tCrB : "); print(mma_tCrB); print("\n");
+        print("tCgB : "); print(tCgB); print("\n");
+        print("tBgB : "); print(tBgB); print("\n");
 
         print("=====================  Config: \n");
         print("  threads per workgroup : "); print(MaxThreadsPerBlock); print("\n");

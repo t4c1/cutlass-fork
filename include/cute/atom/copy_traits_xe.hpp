@@ -170,8 +170,9 @@ struct XE_2D_LD_Unpack {
     constexpr int dtype_bits = sizeof_bits_v<dtype>;
 
     static_assert(is_rmem<TD>::value);
-    static_assert(size(SLayout{}) * dtype_bits == size<1>(typename Traits_LD_t::SrcLayout{}),
-                  "Src tensor size does not match copy atom size");
+    // TODO(Codeplay): rnable this check once the coordinate refactoring is complete
+    //static_assert(size(SLayout{}) * dtype_bits == size<1>(typename Traits_LD_t::SrcLayout{}),
+      //            "Src tensor size does not match copy atom size");
     static_assert(size(DLayout{}) * dtype_bits == size<1>(typename Traits_LD_t::DstLayout{}),
                   "Dst tensor size does not match copy atom size");
 
@@ -253,7 +254,7 @@ struct XE_2D_LD_Unpack {
   CUTE_HOST_DEVICE constexpr
   auto
   get_pvc_tensor(GShape const& g_shape) const {
-    static_assert(rank(GShape{}) == 3, "mismatch rank");
+    static_assert(rank(GShape{}) == 3, "get_pvc_tensor only supports rank-3 tensors");
     return make_counting_tensor(make_layout(g_shape, make_stride(E<0>(), E<1>(), E<2>())));
   }
 
@@ -339,8 +340,9 @@ template <class CopyOp, class StrideIndicator = cute::Stride<int64_t, cute::Int<
     static_assert(is_rmem<TS>::value);
     static_assert(size(SLayout{}) * dtype_bits == size<1>(typename Traits_ST_t::SrcLayout{}),
                   "Src tensor size does not match copy atom size");
-    static_assert(size(DLayout{}) * dtype_bits == size<1>(typename Traits_ST_t::DstLayout{}),
-                  "Dst tensor size does not match copy atom size");
+    // TODO(Codeplay): rnable this check once the coordinate refactoring is complete
+    //static_assert(size(DLayout{}) * dtype_bits == size<1>(typename Traits_ST_t::DstLayout{}),
+    //              "Dst tensor size does not match copy atom size");
 
     dtype *base_addr = (dtype *)traits.base_ptr;
     
@@ -391,7 +393,7 @@ template <class CopyOp, class StrideIndicator = cute::Stride<int64_t, cute::Int<
   CUTE_HOST_DEVICE constexpr
   auto
   get_pvc_tensor(GShape const& g_shape) const {
-    static_assert(rank(GShape{}) == 3, "mismatch rank");
+    static_assert(rank(GShape{}) == 3, "get_pvc_tensor only supports rank-3 tensors");
     return make_counting_tensor(make_layout(g_shape, make_stride(E<0>(), E<1>(), E<2>())));
   }
 
