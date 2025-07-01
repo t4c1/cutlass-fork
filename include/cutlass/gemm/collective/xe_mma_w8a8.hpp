@@ -203,11 +203,15 @@ struct CollectiveMma<MainloopIntelW8A8<Stages, Schedule>, TileShape_, ElementA_,
     Tensor tCgA = thr_mma.partition_A(gA);
     Tensor tCgB = thr_mma.partition_B(gB);
 
-    Tensor tCrA = make_tensor<uint8_t>(make_fragment_layout(mainloop.tiled_copy_a, tCgA(_,_,_,0).shape()));
-    Tensor tCrB = make_tensor<uint8_t>(make_fragment_layout(mainloop.tiled_copy_b, tCgB(_,_,_,0).shape()));
+    Tensor tCrA_alloc = make_tensor<uint32_t>(make_layout(make_shape(Int<size(decltype(tCgA(_,_,_,0).shape()){}) / 4>{})));
+    Tensor tCrB_alloc = make_tensor<uint32_t>(make_layout(make_shape(Int<size(decltype(tCgB(_,_,_,0).shape()){}) / 4>{})));
+    Tensor tCrA = make_tensor(reinterpret_cast<uint8_t*>(tCrA_alloc.data()), make_fragment_layout(mainloop.tiled_copy_a, tCgA(_,_,_,0).shape()));
+    Tensor tCrB = make_tensor(reinterpret_cast<uint8_t*>(tCrB_alloc.data()), make_fragment_layout(mainloop.tiled_copy_b, tCgB(_,_,_,0).shape()));
 
-    Tensor tCrA_fp16 = make_fragment_like<half_t>(tCrA);
-    Tensor tCrB_fp16 = make_fragment_like<half_t>(tCrB);
+    Tensor tCrA_fp16_alloc = make_tensor<uint32_t>(make_layout(make_shape(Int<size(decltype(tCgA(_,_,_,0).shape()){}) / 2>{})));
+    Tensor tCrB_fp16_alloc = make_tensor<uint32_t>(make_layout(make_shape(Int<size(decltype(tCgB(_,_,_,0).shape()){}) / 2>{})));
+    Tensor tCrA_fp16 = make_tensor(reinterpret_cast<half_t*>(tCrA_fp16_alloc.data()), make_fragment_layout(mainloop.tiled_copy_a, tCgA(_,_,_,0).shape()));
+    Tensor tCrB_fp16 = make_tensor(reinterpret_cast<half_t*>(tCrB_fp16_alloc.data()), make_fragment_layout(mainloop.tiled_copy_b, tCgB(_,_,_,0).shape()));
 
     // Retile registers for copies
     Tensor tArA = thr_copy_A.retile_D(tCrA);

@@ -218,8 +218,10 @@ struct CollectiveMma<MainloopIntelXeXMX16Group<Stages, Schedule>, TileShape_, El
     Tensor tCgA = thr_mma.partition_A(gA);
     Tensor tCgB = thr_mma.partition_B(gB);
 
-    Tensor tCrA = make_tensor<ElementA>(make_fragment_layout(tiled_copy_a, tCgA(_,_,_,0).shape()));
-    Tensor tCrB = make_tensor<ElementB>(make_fragment_layout(tiled_copy_b, tCgB(_,_,_,0).shape()));
+    Tensor tCrA_alloc = make_tensor<uint32_t>(make_layout(make_shape(Int<size(decltype(tCgA(_,_,_,0).shape()){}) * sizeof(ElementA) / 4>{})));
+    Tensor tCrB_alloc = make_tensor<uint32_t>(make_layout(make_shape(Int<size(decltype(tCgB(_,_,_,0).shape()){}) * sizeof(ElementB) / 4>{})));
+    Tensor tCrA = make_tensor(reinterpret_cast<ElementA*>(tCrA_alloc.data()), make_fragment_layout(mainloop.tiled_copy_a, tCgA(_,_,_,0).shape()));
+    Tensor tCrB = make_tensor(reinterpret_cast<ElementB*>(tCrB_alloc.data()), make_fragment_layout(mainloop.tiled_copy_b, tCgB(_,_,_,0).shape()));
   
     // Retile registers for copies
     Tensor tArA = thr_copy_A.retile_D(tCrA);
