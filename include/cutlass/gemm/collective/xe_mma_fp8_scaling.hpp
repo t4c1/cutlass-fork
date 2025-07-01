@@ -519,9 +519,13 @@ public:
     Tensor tCgA = thr_mma.partition_A(gA);
     Tensor tCgB = thr_mma.partition_B(gB);
 
+    Layout tCrA_layout = make_fragment_layout(mainloop.tiled_copy_a, tCgA(_,_,_,0).shape());
+    Layout tCrB_layout = make_fragment_layout(mainloop.tiled_copy_b, tCgB(_,_,_,0).shape());
     // Create fragments
-    Tensor mma_A = make_tensor<ElementMMA>(make_fragment_layout(mainloop.tiled_copy_a, tCgA(_,_,_,0).shape()));
-    Tensor mma_B = make_tensor<ElementMMA>(make_fragment_layout(mainloop.tiled_copy_b, tCgB(_,_,_,0).shape()));
+    Tensor mma_A_alloc = make_tensor<uint32_t>(recast_layout<ElementMMA, uint32_t>(tCrA_layout));
+    Tensor mma_B_alloc = make_tensor<uint32_t>(recast_layout<ElementMMA, uint32_t>(tCrB_layout));
+    Tensor mma_A = make_tensor(reinterpret_cast<ElementMMA*>(mma_A_alloc.data()), tCrA_layout);
+    Tensor mma_B = make_tensor(reinterpret_cast<ElementMMA*>(mma_B_alloc.data()), tCrB_layout);
 
     // If IsATransformed, we need modes M_atom, and M_iter from fragment_A
     // layout else we need mode N_iter from fragment_B layout.
@@ -542,8 +546,10 @@ public:
     Tensor fragment_zeroB_input =  make_tensor<NonVoidElementZeroB> (FragZeroBLayout{});
 
     // narrow input fragment
-    Tensor quantA_frag = make_tensor<uint8_t>(mma_A.layout());
-    Tensor quantB_frag = make_tensor<uint8_t>(mma_B.layout());
+    Tensor quantA_frag_alloc = make_tensor<uint32_t>(recast_layout<uint8_t, uint32_t>(tCrA_layout));
+    Tensor quantB_frag_alloc = make_tensor<uint32_t>(recast_layout<uint8_t, uint32_t>(tCrB_layout));
+    Tensor quantA_frag = make_tensor(reinterpret_cast<uint8_t*>(quantA_frag_alloc.data()), tCrA_layout);
+    Tensor quantB_frag = make_tensor(reinterpret_cast<uint8_t*>(quantB_frag_alloc.data()), tCrB_layout);
 
     static_assert(std::is_same_v<typename decltype(mma_A)::value_type, ElementMMA>);
     static_assert(std::is_same_v<typename decltype(mma_B)::value_type, ElementMMA>);
@@ -667,7 +673,7 @@ public:
       transform_quant<true, false>(quantA_frag, mma_A, fragment_scaleA_input, fragment_zeroA_input);
       transform_quant<false, true>(quantB_frag, mma_B, fragment_scaleB_input, fragment_zeroB_input);
 
-      cute::gemm(tiled_mma, mma_A, mma_B, accum);
+      cute::gemm(tiled_mma, mma_A_alloc, mma_B_alloc, accum);
       barrier_wait(barrier_scope);
     }
   }
